@@ -1,0 +1,19 @@
+# Never commit real secrets
+application/config/secrets.local.php
+*.env
+secrets.env
+*.env.local
+
+# Backups created during deploys
+*.bak
+*.bak.*
+
+# PHP runtime
+application/logs/*
+application/cache/*
+!application/logs/.gitkeep
+!application/cache/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
