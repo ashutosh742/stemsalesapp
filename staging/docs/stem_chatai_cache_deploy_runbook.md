@@ -59,7 +59,7 @@ autoloader picks it up with no other change.
 Append to `application/config/config.php`:
 
 ```php
-$config['chatai_cache_enabled']     = TRUE;   // master switch, default TRUE
+$config['chatai_cache_enabled']     = TRUE;   // MUST set to TRUE to activate. Default in code is FALSE for safe merge.
 $config['chatai_cache_ttl_seconds'] = 3600;   // 1 hour, default 3600
 $config['chatai_cache_log_misses']  = FALSE;  // verbose miss log, default FALSE
 ```

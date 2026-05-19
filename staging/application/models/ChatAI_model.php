@@ -31,8 +31,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  */
 class ChatAI_model extends CI_Model {
 
-    /** @var bool runtime flag, defaults to TRUE if config missing */
-    private $cache_enabled = TRUE;
+    /** @var bool runtime flag, defaults to FALSE if config missing (safe default for production merge) */
+    private $cache_enabled = FALSE;
 
     /** @var int seconds, defaults to 3600 if config missing */
     private $cache_ttl = 3600;
