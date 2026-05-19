@@ -1,0 +1,25 @@
+--- a/application/config/config.php
++++ b/application/config/config.php
+@@ -522,7 +522,9 @@
+ $config['proxy_ips'] = '';
+ 
+ 
+-// Add these lines
+-$config['openai_api_key'] = 'sk-svcacct-REDACTED';
++// Secrets loader: pulls from env / /etc/stemapp/secrets.env. Never hardcoded.
++require_once APPPATH . 'config/secrets.php';
++
++$config['openai_api_key'] = stem_secret('openai_api_key', '');
+ $config['openai_base_url'] = 'https://api.openai.com/v1/';
+
+--- a/application/controllers/Chat.php
++++ b/application/controllers/Chat.php
+@@ -341,8 +341,8 @@
+     }
+     
+     public function call_chatgpt_api_with_context($prompt, $previousMessages, $context) {
+-        // Configuration for OpenAI API
+-        $api_key = 'sk-svcacct-REDACTED';// Use environment variable or config
++        // Read from config (which is loaded from env / /etc/stemapp/secrets.env)
++        $api_key = $this->config->item('openai_api_key');
+         $api_url = 'https://api.openai.com/v1/chat/completions';
