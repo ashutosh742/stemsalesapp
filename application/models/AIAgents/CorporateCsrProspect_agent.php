@@ -193,7 +193,23 @@ class CorporateCsrProspect_model extends CI_Model {
     }
 
     // ============================================================
-    // ACCEPT and SEED into init_call + daily_planner
+    // ACCEPT (reshaped per PR #7 reshape plan)
+    //
+    // Production discipline: this method does NOT write to init_call or
+    // daily_planner directly. Those tables are owned by the 6 frozen prod
+    // creation paths (BARGE_UNKNOWN, RESEARCH_BORN, NEW_LEAD_FORM,
+    // ADMIN_CREATED, EXCEL_IMPORTED, BARGE_FROM_FUNNEL).
+    //
+    // Instead this method:
+    //   1. Marks the suggestion as accepted in corporate_csr_suggestion_v2
+    //   2. Writes a row to corporate_csr_lead_link_v2 with the BD intent
+    //   3. Returns a redirect_hint payload telling the client which prod
+    //      creation path to launch (research_born by default) and
+    //      pre-fills the company_name + lead_source_tag for the form.
+    //
+    // The BD then completes the prod creation flow in the app. When the
+    // resulting init_call lands, a separate hook (link_init_call below)
+    // is called to bind init_call_id back into corporate_csr_lead_link_v2.
     // ============================================================
     public function accept_and_seed($suggestion_id, $bd_uid, $target_plan_date = null) {
         $suggestion_id = (int)$suggestion_id;
@@ -212,46 +228,72 @@ class CorporateCsrProspect_model extends CI_Model {
         $corp = $this->db->where('csr_corporate_id', $sug['csr_corporate_id'])
                          ->get('csr_corporate_master_v2')->row_array();
 
-        // Create init_call as corporate lead (cstatus=1 Open)
-        $this->db->insert('init_call', [
-            'creator_id'   => $bd_uid,
-            'mainbd'       => $bd_uid,
-            'new_lead'     => 1,
-            'cstatus'      => 1,
-            'lead_type'    => 'corporate',
-            'company_name' => $corp['company_name'],
-            'category'     => 'positive_key',
-            'category_code'=> 'positive_key',
-            'createDate'   => date('Y-m-d H:i:s'),
+        // Mark suggestion accepted (no init_call write)
+        $this->db->where('suggestion_id', $suggestion_id)->update('corporate_csr_suggestion_v2', [
+            'status'      => 'accepted',
+            'accepted_at' => date('Y-m-d H:i:s'),
         ]);
-        $init_call_id = $this->db->insert_id();
 
-        // Create daily_planner row for tomorrow
-        $this->db->insert('daily_planner', [
-            'uid'              => $bd_uid,
-            'plan_date'        => $target_plan_date,
-            'cid_id'           => $init_call_id,
-            'actiontype_id'    => 3,
-            'purpose_id'       => 1,
-            'is_auto'          => 0,
-            'is_same_day_plan' => 0,
-            'origin_v2'        => 'corporate_csr_prospect',
+        // Write the lead-link intent row (init_call_id filled in later by link_init_call)
+        $this->db->insert('corporate_csr_lead_link_v2', [
+            'suggestion_id'    => $suggestion_id,
+            'bd_uid'           => $bd_uid,
+            'csr_corporate_id' => $sug['csr_corporate_id'],
+            'company_name'     => $corp['company_name'],
+            'target_plan_date' => $target_plan_date,
+            'init_call_id'     => null,
+            'link_status'      => 'pending',
             'created_at'       => date('Y-m-d H:i:s'),
         ]);
-        $planner_id = $this->db->insert_id();
+        $link_id = $this->db->insert_id();
 
-        $this->db->where('suggestion_id', $suggestion_id)->update('corporate_csr_suggestion_v2', [
-            'status'                  => 'accepted',
-            'accepted_at'             => date('Y-m-d H:i:s'),
-            'init_call_id_seeded'     => $init_call_id,
-            'daily_planner_id_seeded' => $planner_id,
+        // Return redirect_hint instead of writing to prod tables
+        return [
+            'ok'           => true,
+            'link_id'      => $link_id,
+            'redirect_hint'=> [
+                'creation_path' => 'research_born',
+                'screen'        => 'NewLeadScreen',
+                'prefill'       => [
+                    'company_name'        => $corp['company_name'],
+                    'lead_type'           => 'corporate',
+                    'lead_source_tag'     => 'marketing_csr_prospect',
+                    'lead_source_campaign_ref' => 'csr_suggestion_' . $suggestion_id,
+                    'target_plan_date'    => $target_plan_date,
+                ],
+                'link_id'       => $link_id,
+            ],
+        ];
+    }
+
+    // ============================================================
+    // LINK init_call back to a suggestion (called after BD completes
+    // the prod creation flow in the app). Idempotent.
+    // ============================================================
+    public function link_init_call($link_id, $init_call_id) {
+        $link_id = (int)$link_id;
+        $init_call_id = (int)$init_call_id;
+        if (!$link_id || !$init_call_id) return ['ok' => false, 'error' => 'missing ids'];
+
+        $link = $this->db->where('link_id', $link_id)
+                         ->get('corporate_csr_lead_link_v2')->row_array();
+        if (!$link) return ['ok' => false, 'error' => 'link not found'];
+        if ($link['link_status'] === 'linked' && (int)$link['init_call_id'] === $init_call_id) {
+            return ['ok' => true, 'already_linked' => true];
+        }
+
+        $this->db->where('link_id', $link_id)->update('corporate_csr_lead_link_v2', [
+            'init_call_id' => $init_call_id,
+            'link_status'  => 'linked',
+            'linked_at'    => date('Y-m-d H:i:s'),
         ]);
 
-        return [
-            'ok'          => true,
-            'init_call_id'=> $init_call_id,
-            'planner_id'  => $planner_id,
-        ];
+        // Also stamp suggestion with init_call_id for read paths
+        $this->db->where('suggestion_id', $link['suggestion_id'])->update('corporate_csr_suggestion_v2', [
+            'init_call_id_seeded' => $init_call_id,
+        ]);
+
+        return ['ok' => true, 'link_id' => $link_id, 'init_call_id' => $init_call_id];
     }
 
     public function dismiss($suggestion_id, $bd_uid, $reason = '') {

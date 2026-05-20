@@ -84,6 +84,22 @@ class CorporateCsrProspectController extends CI_Controller {
         $this->_json($this->csr->accept_and_seed($sid, $bd_uid, $tpd));
     }
 
+    // ============================================================
+    // LINK init_call back to a corporate_csr_lead_link_v2 row.
+    // Called by the mobile app after BD completes the production
+    // lead-creation flow (research_born / new_lead_form) launched
+    // from the redirect_hint returned by accept_and_seed.
+    // Idempotent.
+    // ============================================================
+    public function link_init_call() {
+        $link_id      = (int)$this->input->post('link_id');
+        $init_call_id = (int)$this->input->post('init_call_id');
+        if (!$link_id || !$init_call_id) {
+            return $this->_json(['error' => 'link_id and init_call_id required'], 422);
+        }
+        $this->_json($this->csr->link_init_call($link_id, $init_call_id));
+    }
+
     public function dismiss() {
         $sid    = (int)$this->input->post('suggestion_id');
         $bd_uid = (int)$this->input->post('bd_uid');

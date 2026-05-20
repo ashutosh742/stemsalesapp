@@ -14,6 +14,7 @@ $route['api/csr_prospect/refresh_for_bd']    = 'corporatecsrprospectcontroller/r
 $route['api/csr_prospect/today_for_bd']      = 'corporatecsrprospectcontroller/today_for_bd';
 $route['api/csr_prospect/today_summary']     = 'corporatecsrprospectcontroller/today_summary';
 $route['api/csr_prospect/accept_and_seed']   = 'corporatecsrprospectcontroller/accept_and_seed';
+$route['api/csr_prospect/link_init_call']    = 'corporatecsrprospectcontroller/link_init_call';
 $route['api/csr_prospect/dismiss']           = 'corporatecsrprospectcontroller/dismiss';
 $route['api/csr_prospect/sync_csr_gov']      = 'corporatecsrprospectcontroller/sync_csr_gov';
 $route['api/csr_prospect/sync_apollo']       = 'corporatecsrprospectcontroller/sync_apollo';
