@@ -1,0 +1,37 @@
+# React Native / Node
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/*.xcworkspace
+*.xcuserstate
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/.idea/
+*.iml
+local.properties
+*.keystore
+!debug.keystore
+
+# Metro / RN
+.metro-health-check*
+.expo/
+dist/
+web-build/
+
+# Env
+.env
+.env.local
+
+# Editor
+.vscode/
+.DS_Store
