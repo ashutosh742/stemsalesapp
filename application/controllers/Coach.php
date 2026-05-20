@@ -915,4 +915,121 @@ class Coach extends CI_Controller
         $code   = $result['ok'] ? 200 : ($result['error'] === 'permission_denied' ? 403 : 422);
         $this->_json($result, $code);
     }
+
+    // ==================================================================
+    // POST /api/run_tool
+    //
+    // Generic mobile tool dispatcher. The mobile chat UI sends a tool name
+    // and a payload; this endpoint routes it to the appropriate Coach agent
+    // method and returns the result as JSON. Keeps the mobile app from
+    // having to know every backend endpoint URL.
+    //
+    // Body (JSON):
+    //   uid      int     required  caller user id
+    //   tool     string  required  one of the allowed tool names below
+    //   payload  object  optional  tool-specific arguments
+    //
+    // Allowed tools:
+    //   skill_scores             { uid }
+    //   skill_gaps               { uid }
+    //   onboarding_status        { uid }
+    //   faq_search               { q }
+    //   knowledge_list           { uid, type? }
+    //   knowledge_whats_new      { uid, since? }
+    //   drill_list               { uid }
+    //
+    // Returns: { ok, tool, result }
+    //
+    // Inlined here on mobile-api-endpoints branch, 2026-05-20.
+    // ==================================================================
+    public function api_run_tool()
+    {
+        if ($this->input->method() !== 'post') {
+            $this->_json(['error' => 'post_only', 'error_code' => 'METHOD_001'], 405);
+        }
+
+        $raw  = $this->input->raw_input_stream;
+        $body = [];
+        if ($raw) {
+            $decoded = json_decode($raw, true);
+            if (json_last_error() === JSON_ERROR_NONE) $body = $decoded;
+        }
+        if (!$body) {
+            $body = $this->input->post(null, true) ?: [];
+        }
+
+        $uid     = isset($body['uid'])     ? (int)$body['uid']         : null;
+        $tool    = isset($body['tool'])    ? strtolower(trim($body['tool'])) : null;
+        $payload = isset($body['payload']) ? (array)$body['payload']   : [];
+
+        if (!$uid) {
+            $this->_json(['error' => 'missing_uid', 'error_code' => 'PARAM_001'], 400);
+        }
+        if (!$tool) {
+            $this->_json(['error' => 'missing_tool', 'error_code' => 'PARAM_001'], 400);
+        }
+
+        // Whitelist of tools the mobile app may call through this dispatcher
+        $allowed = [
+            'skill_scores', 'skill_gaps', 'onboarding_status',
+            'faq_search', 'knowledge_list', 'knowledge_whats_new', 'drill_list',
+        ];
+        if (!in_array($tool, $allowed)) {
+            $this->_json([
+                'error'      => 'invalid_tool',
+                'error_code' => 'PARAM_003',
+                'message'    => 'tool must be one of: ' . implode(', ', $allowed),
+            ], 400);
+        }
+
+        // Dispatch
+        try {
+            switch ($tool) {
+                case 'skill_scores':
+                    $result = $this->coach_agent->skill_scores($uid);
+                    break;
+                case 'skill_gaps':
+                    $result = $this->coach_agent->skill_gaps($uid);
+                    break;
+                case 'onboarding_status':
+                    $result = $this->coach_agent->onboarding_status($uid);
+                    break;
+                case 'faq_search':
+                    $q = isset($payload['q']) ? trim($payload['q']) : '';
+                    if (!$q) {
+                        $this->_json(['error' => 'missing_q', 'error_code' => 'PARAM_001'], 400);
+                    }
+                    $result = $this->faq_agent->search($q, $uid);
+                    break;
+                case 'knowledge_list':
+                    $type = isset($payload['type']) ? trim($payload['type']) : null;
+                    $result = $this->knowledge_agent->list_for_user($uid, $type);
+                    break;
+                case 'knowledge_whats_new':
+                    $since = isset($payload['since']) ? trim($payload['since']) : null;
+                    $result = $this->knowledge_agent->whats_new($uid, $since);
+                    break;
+                case 'drill_list':
+                    $result = $this->coach_agent->drill_list($uid);
+                    break;
+                default:
+                    $result = ['ok' => false, 'error' => 'not_implemented'];
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'api_run_tool failed: ' . $e->getMessage());
+            $this->_json([
+                'ok'         => false,
+                'error'      => 'tool_failed',
+                'error_code' => 'TOOL_001',
+                'detail'     => $e->getMessage(),
+            ], 500);
+        }
+
+        $this->_json([
+            'ok'           => true,
+            'tool'         => $tool,
+            'result'       => $result,
+            'generated_at' => date('c'),
+        ]);
+    }
 }

@@ -271,6 +271,117 @@ class AnayaAsk extends CI_Controller
     }
 
     // =========================================================================
+    // GET /api/day_pack?uid=<uid>&role=<role>&date=<YYYY-MM-DD optional>
+    //
+    // Mobile day pack endpoint. Returns the consolidated morning-brief payload
+    // that the mobile home screen renders: planned tasks for today, top
+    // applause, top alerts, manager scorecard if role is cm or rm.
+    //
+    // Query params:
+    //   uid    int     required  caller user id
+    //   role   string  required  bd | cm | rm | director
+    //   date   string  optional  YYYY-MM-DD, defaults to today (server time)
+    //
+    // Inlined here on mobile-api-endpoints branch, 2026-05-20.
+    // =========================================================================
+    public function api_day_pack()
+    {
+        if ($this->input->method() !== 'get') {
+            $this->_json(['error' => 'get_only'], 405);
+        }
+
+        $uid  = (int)$this->input->get('uid');
+        $role = strtolower($this->input->get('role') ?: '');
+        $date = $this->input->get('date') ?: date('Y-m-d');
+
+        if (!$uid) {
+            $this->_json(['error' => 'missing_uid',
+                'message' => 'uid is required'], 400);
+        }
+        if (!$role || !in_array($role, self::VALID_ROLES)) {
+            $this->_json(['error' => 'invalid_role',
+                'message' => 'role must be one of: ' . implode(', ', self::VALID_ROLES)], 400);
+        }
+
+        // Validate date format YYYY-MM-DD
+        $d = DateTime::createFromFormat('Y-m-d', $date);
+        if (!$d || $d->format('Y-m-d') !== $date) {
+            $this->_json(['error' => 'invalid_date',
+                'message' => 'date must be YYYY-MM-DD'], 400);
+        }
+
+        // Confirm the user exists
+        $user = $this->db->query(
+            "SELECT uid, name, type_id FROM user WHERE uid = ? LIMIT 1",
+            [$uid]
+        )->row_array();
+        if (!$user) {
+            $this->_json(['error' => 'user_not_found'], 404);
+        }
+
+        // Planned tasks for the day
+        $planned = $this->db->query("
+            SELECT id, cid_id, actiontype_id, purpose_id, plan_date,
+                   slot_start, slot_end, is_auto, status
+              FROM daily_planner
+             WHERE uid = ?
+               AND plan_date = ?
+             ORDER BY slot_start ASC
+             LIMIT 50
+        ", [$uid, $date])->result_array();
+
+        // Top 3 applause items in last 24 hours for this user
+        $applause = $this->db->query("
+            SELECT id, event_type, bd_uid, related_id, message_short, created_at
+              FROM applause_log
+             WHERE bd_uid = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             ORDER BY created_at DESC
+             LIMIT 3
+        ", [$uid])->result_array();
+
+        // Top 5 stuck leads for this BD (cstatus, days_in_status)
+        $stuck = [];
+        if ($role === 'bd') {
+            $stuck = $this->db->query("
+                SELECT cid_id, current_status_id, days_in_status, school_name
+                  FROM init_call
+                 WHERE mainbd = ?
+                   AND days_in_status >= 5
+                 ORDER BY days_in_status DESC
+                 LIMIT 5
+            ", [$uid])->result_array();
+        }
+
+        // Manager scorecard placeholder if role is cm or rm (real numbers
+        // come from line_manager_scorecard table when migration 022 is live).
+        $scorecard = null;
+        if (in_array($role, ['cm', 'rm'])) {
+            $row = $this->db->query("
+                SELECT day_score, grade, k1_mom_sla_pct,
+                       k3_signoff_avg_hours, pending_signoff_count
+                  FROM line_manager_scorecard
+                 WHERE manager_uid = ?
+                   AND scorecard_date = ?
+                 LIMIT 1
+            ", [$uid, $date])->row_array();
+            $scorecard = $row ?: null;
+        }
+
+        $this->_json([
+            'ok'        => true,
+            'uid'       => $uid,
+            'role'      => $role,
+            'date'      => $date,
+            'planned'   => $planned,
+            'applause'  => $applause,
+            'stuck'     => $stuck,
+            'scorecard' => $scorecard,
+            'generated_at' => date('c'),
+        ]);
+    }
+
+    // =========================================================================
     // PRIVATE HELPERS
     // =========================================================================
 
