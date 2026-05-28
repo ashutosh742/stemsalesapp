@@ -128,12 +128,14 @@ class Reports extends CI_Controller {
     //  New Meeting Details Page Developed By Deepak
 public function MeetingDetailNew(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     // if(isset($_POST['sdate'])){
     // $sdate = $_POST['sdate'];
     // $edate = $_POST['edate'];
@@ -193,7 +195,7 @@ public function MeetingsDatas($mtypes,$target_uid,$sdate,$edate,$userwise =NULL)
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     // if(empty($user)){
     //     redirect('Menu/main');
     // }
@@ -212,12 +214,14 @@ public function MeetingsDatas($mtypes,$target_uid,$sdate,$edate,$userwise =NULL)
 }
 public function MeetingsDatasNewBargMeetingNORP($mtypes,$target_uid,$sdate,$edate,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -234,12 +238,14 @@ public function MeetingsDatasNewBargMeetingNORP($mtypes,$target_uid,$sdate,$edat
 }
 public function ViewMeetingDetails($taskid){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $totalMeetingsUserByDatas   = $this->Menu_model->GetMeetingDetailsByTaskID($taskid);
     
         $this->load->view('Reports/ViewMeetingDetails',['uid'=>$uid,'user'=>$user,'totalMeetingsUserByDatas'=>$totalMeetingsUserByDatas,'tmeeting_taskid'=>$taskid,'dep_name'=>$dep_name]);
@@ -249,13 +255,15 @@ public function ViewMeetingDetails($taskid){
 }
 public function ReportNoRPConvertAfterChecking(){
     $user               = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']       = $user;
     $uid                = $user['user_id'];
     $uyid               =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->library('session');
     $dt                 = $this->Menu_model->get_utype($uyid);
-    $dep_name           = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $no_rp_task_id      = $this->input->post('no_rp_task_id');
     $no_rp_remarks      = $this->input->post('no_rp_remarks');
     $norp_date          = date('Y-m-d H:i:s');
@@ -303,13 +311,15 @@ public function ReportNoRPConvertAfterChecking(){
 }
 public function ReportNoRPToRPConvertAfterChecking(){
     $user               = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']       = $user;
     $uid                = $user['user_id'];
     $uyid               =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->library('session');
     $dt                 = $this->Menu_model->get_utype($uyid);
-    $dep_name           = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $no_rp_task_id      = $this->input->post('no_rp_task_id');
     $no_rp_remarks      = $this->input->post('no_rp_remarks');
     $norp_date          = date('Y-m-d H:i:s');
@@ -364,12 +374,14 @@ public function ReportNoRPToRPConvertAfterChecking(){
 }
 public function GetTeamTaskOnSelfOrOtherFunnelTask(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -434,12 +446,14 @@ public function GetTeamTaskOnSelfOrOtherFunnelTask(){
 }
 public function TeamConversionBetweenDatesData(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -501,13 +515,15 @@ public function TeamConversionBetweenDatesData(){
 }
 public function TeamPlannerReport(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -574,13 +590,15 @@ public function TeamPlannerReport(){
 }
 public function UserRequestDetails($mtypes,$target_uid,$sdate,$edate,$task_action_id,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     ini_set('max_execution_time', 18000);
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -602,13 +620,15 @@ public function UserRequestDetails($mtypes,$target_uid,$sdate,$edate,$task_actio
 }
 public function PlannerReportDataBYDate($target_uid,$sdate,$edate,$mtypes,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     ini_set('max_execution_time', 18000);
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -628,13 +648,15 @@ public function PlannerReportDataBYDate($target_uid,$sdate,$edate,$mtypes,$userw
 }
 public function PlannerApprovedReportDataBYDate($target_uid,$sdate,$edate,$mtypes,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     ini_set('max_execution_time', 18000);
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -651,13 +673,15 @@ public function PlannerApprovedReportDataBYDate($target_uid,$sdate,$edate,$mtype
 }
 public function GetTeamTaskOnSelfOrOtherFunnelTaskLists($mtypes,$target_uid,$sdate,$edate,$task_action_id,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     ini_set('max_execution_time', 18000);
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -684,13 +708,15 @@ public function GetTeamTaskOnSelfOrOtherFunnelTaskLists($mtypes,$target_uid,$sda
 }
 public function SpecialRemarksLeadsCurrentFY(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -738,13 +764,15 @@ public function SpecialRemarksLeadsCurrentFY(){
 }
 public function AdminRemarksLeadsCurrentFY(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -767,7 +795,7 @@ public function AdminRemarksLeadsCurrentFY(){
         }
     }else{
         $sdate              = date('Y-m-d');
-        $sdate              = "2025-02-14";
+        $sdate              = "2026-04-01";
         $edate              = date('Y-m-d');
         $admin_id_filter = $uid;
     }
@@ -786,13 +814,15 @@ public function AdminRemarksLeadsCurrentFY(){
 }
 public function LineManagerCallingonRPLeads(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -839,13 +869,15 @@ public function LineManagerCallingonRPLeads(){
 }
 public function DayManagementStarRating(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['sdate'])){
@@ -884,13 +916,15 @@ public function DayManagementStarRating(){
 }
 public function TaskCheckingManagementStarRating(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['sdate'])){
@@ -934,13 +968,15 @@ public function TaskCheckingManagementStarRating(){
 }
 public function TaskCheckingSessionManagement($targetUID,$sdate,$edate,$rtype){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $rm_filter              = 'all';
     $admin_id_filter        = $targetUID;
@@ -957,13 +993,15 @@ public function TaskCheckingSessionManagement($targetUID,$sdate,$edate,$rtype){
 }
 public function TaskCheckingManagementStarRatingDetails($targetuid,$sdate,$edate,$approved_by = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $targetDetails = $this->Menu_model->get_userbyid($targetuid); 
     $specialRemakrsDatas   = $this->Report_model->TaskCheckingManagementStarRatingDetailsLists($targetuid,$sdate,$edate,$approved_by);
     $sessiontime   = $this->Report_model->GetSeesionTimeTakeBYSConTaskCheckBySingleUser($targetuid,$sdate,$edate,$approved_by);
@@ -976,13 +1014,15 @@ public function TaskCheckingManagementStarRatingDetails($targetuid,$sdate,$edate
 }
 public function TaskCheckingManagementStarRatingSingleDetails($task_id,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $specialRemakrsDatas    = $this->Report_model->TaskCheckingManagementStarRatingSingleDetailsLists($task_id,$sdate,$edate);
     $liveMettingsTasks      = $this->Report_model->GetTBLTaskUsingSinleTaskID($task_id);  
 
@@ -996,13 +1036,15 @@ public function TaskCheckingManagementStarRatingSingleDetails($task_id,$sdate,$e
 }
 public function DayManagementStarRatingDetails($targetuid,$sdate,$edate,$approved_by =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $targetDetails = $this->Menu_model->get_userbyid($targetuid); 
     $specialRemakrsDatas   = $this->Report_model->DayManagementStarRatingListsDetails($targetuid,$sdate,$edate,$approved_by);
     if(!empty($user)){
@@ -1013,13 +1055,15 @@ public function DayManagementStarRatingDetails($targetuid,$sdate,$edate,$approve
 }
 public function SpecialRemarksLeadsCurrentFYLists($tuid,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $task_action_id = 1;
    
      $specialRemakrsDatas  = $this->Report_model->GetSpecialRemarksTaskListsByUser($tuid,$sdate,$edate,$task_action_id);
@@ -1032,13 +1076,15 @@ public function SpecialRemarksLeadsCurrentFYLists($tuid,$sdate,$edate){
 }
 public function LineManagerCallingRemarksonRPLeads($tuid,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $task_action_id = 1;
    
      $specialRemakrsDatas  = $this->Report_model->LineManagerCallingRemarksonRPLeadsLists($tuid,$sdate,$edate,$task_action_id);
@@ -1051,13 +1097,15 @@ public function LineManagerCallingRemarksonRPLeads($tuid,$sdate,$edate){
 }
 public function LineManagerCallingRemarksonRPBDLeads($tuid,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $task_action_id = 1;
    
      $specialRemakrsDatas  = $this->Report_model->LineManagerCallingRemarksonRPLeadsBDLists($tuid,$sdate,$edate,$task_action_id,$uid);
@@ -1070,13 +1118,15 @@ public function LineManagerCallingRemarksonRPBDLeads($tuid,$sdate,$edate){
 }
 public function AdminRemarksLeadsCurrentFYLists($tuid,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $task_action_id = 1;
    
      $specialRemakrsDatas  = $this->Report_model->GetAdminTaskListsByUser($tuid,$sdate,$edate,$task_action_id);
@@ -1089,13 +1139,15 @@ public function AdminRemarksLeadsCurrentFYLists($tuid,$sdate,$edate){
 }
 public function TeamPlannerReportLists($mtypes,$target_uid,$sdate,$edate,$task_action_id,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     ini_set('max_execution_time', 18000);
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1119,12 +1171,16 @@ public function TeamPlannerReportLists($mtypes,$target_uid,$sdate,$edate,$task_a
 }
 public function OurTeamFunnal(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){
+        redirect('login');
+        return;
+    }
     $data['user']   = $user;
     $uid            = $user['user_id'];
-    $uyid           =  $user['type_id'];
+    $uyid           = isset($user['type_id']) ? $user['type_id'] : 0;
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name       = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -1177,12 +1233,14 @@ public function OurTeamFunnal(){
 
 public function FunnelDetails($mtypes,$target_uid,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1203,12 +1261,14 @@ public function FunnelDetails($mtypes,$target_uid,$userwise =NULL){
 
 public function MoreThenNDaysNoActivityDone(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -1262,12 +1322,14 @@ public function MoreThenNDaysNoActivityDone(){
 
 public function MoreThenNDaysNoActivityDoneDetails($tarFilter,$target_uid,$userwise,$status = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $totalTasksUserByDatas   = $this->Report_model->MoreThenNDaysNoActivityDoneBYUserCompanyDetails($tarFilter,$target_uid,$userwise,$status);
 
@@ -1287,12 +1349,14 @@ public function MoreThenNDaysNoActivityDoneDetails($tarFilter,$target_uid,$userw
 
 public function MoreThenNDaysNoActivityDoneByLineManager(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -1346,12 +1410,14 @@ public function MoreThenNDaysNoActivityDoneByLineManager(){
 
 public function MoreThenNDaysNoActivityDoneByLineManagerDetails($tarFilter,$target_uid,$userwise,$status = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $totalTasksUserByDatas   = $this->Report_model->MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManager($tarFilter,$target_uid,$userwise,$status);
 
@@ -1375,12 +1441,14 @@ public function MoreThenNDaysNoActivityDoneByLineManagerDetails($tarFilter,$targ
 
 public function MoreThenNDaysNoActivityDoneByLineManagerWhereProposalSent(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -1434,12 +1502,14 @@ public function MoreThenNDaysNoActivityDoneByLineManagerWhereProposalSent(){
 
 public function MoreThenNDaysNoActivityDoneByLineManagerDetailsWhereProposalSent($tarFilter,$target_uid,$userwise,$status = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $totalTasksUserByDatas   = $this->Report_model->MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereProposalSent($tarFilter,$target_uid,$userwise,$status);
 
@@ -1460,12 +1530,14 @@ public function MoreThenNDaysNoActivityDoneByLineManagerDetailsWhereProposalSent
 
 public function MoreThenNDaysNoActivityDoneByLineManagerWhereRPMeetingDone(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -1520,12 +1592,14 @@ public function MoreThenNDaysNoActivityDoneByLineManagerWhereRPMeetingDone(){
 
 public function MoreThenNDaysNoActivityDoneByLineManagerDetailsWhereRPMeetingDone($tarFilter,$target_uid,$userwise,$status = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $totalTasksUserByDatas   = $this->Report_model->MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereRPMeetingDone($tarFilter,$target_uid,$userwise,$status);
 
@@ -1545,12 +1619,14 @@ public function MoreThenNDaysNoActivityDoneByLineManagerDetailsWhereRPMeetingDon
 
 public function FunnelDetailsWithCluster($mtypes,$target_uid,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1568,12 +1644,14 @@ public function FunnelDetailsWithCluster($mtypes,$target_uid,$userwise =NULL){
 }
 public function FunnelDetailsWithClusterID($mtypes,$target_uid,$clusterID,$userwise =NULL,$status = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1591,12 +1669,14 @@ public function FunnelDetailsWithClusterID($mtypes,$target_uid,$clusterID,$userw
 }
 public function ProposalDetails(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $task_action_id     = $this->input->Post('task_action');
@@ -1654,13 +1734,15 @@ public function ProposalDetails(){
 }
 public function ProposalDetailsData($mtypes,$target_uid,$sdate,$edate,$task_action_id,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $comming_user_types = $uyid;
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1684,12 +1766,14 @@ public function ProposalDetailsData($mtypes,$target_uid,$sdate,$edate,$task_acti
 }
 public function ViewProposalDetails($pid){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           = $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
  $comming_user_types = $uyid;
     $proposalDatas   = $this->Report_model->GetProposalDetaislByPID($pid);
   
@@ -1701,6 +1785,8 @@ public function ViewProposalDetails($pid){
 }
 public function CheckPraposalApprovedOrRejectByManager(){
     $user               = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']       = $user;
     $uid                = $user['user_id'];
     $uyid               =  $user['type_id'];
@@ -1868,12 +1954,14 @@ public function CheckPraposalApprovedOrRejectByManager(){
 // End Praposal Check || Handover Check
 public function WorkAfterProposalApprovedReject($pid){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $proposalDatas  = $this->Report_model->GetProposalDetaislByPID($pid);
     $init_call_id   =  $proposalDatas[0]->init_call_id;
     $propasal_apr_date   =  $proposalDatas[0]->propasal_apr_date;
@@ -1888,12 +1976,14 @@ public function WorkAfterProposalApprovedReject($pid){
 }
 public function MeetingDoneProposalOverviewClosureStatus(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['sdate'])){
@@ -1950,12 +2040,14 @@ public function MeetingDoneProposalOverviewClosureStatus(){
 }
 public function MeetingDoneProposalOverviewClosureStatusLists($mtypes,$target_uid,$sdate,$edate,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -1976,12 +2068,14 @@ public function MeetingDoneProposalOverviewClosureStatusLists($mtypes,$target_ui
 }
 public function MeetingDoneProposalOverviewClosureStatusListsAfterReview($mtypes,$target_uid,$sdate,$edate,$checkstartrDate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -2010,7 +2104,7 @@ public function IndiaLocationDetails(){
     $this->load->model('Menu_model');
      if(empty($user)){ redirect('Menu/main');}
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $getLocations = $this->Report_model->GetTotalLocations();
     $this->load->view('Reports/IndiaLocationDetails',[
             'uid'           => $uid,
@@ -2108,7 +2202,7 @@ public function IndiaLocationDetailsByData($keys){
     $this->load->model('Menu_model');
      if(empty($user)){ redirect('Menu/main');}
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $getLocations = $this->Report_model->GetTotalLocationsBYKeysPoint($keys);
     // dd($getLocations);
     $this->load->view('Reports/IndiaLocationDetailsByData',[
@@ -2127,7 +2221,7 @@ public function IndiaLocationDetailsByDatas($keys,$ids){
     $this->load->model('Menu_model');
      if(empty($user)){ redirect('Menu/main');}
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $getLocations = $this->Report_model->GetTotalLocationsBYKeysPoints($keys,$ids);
     // dd($getLocations);
     $this->load->view('Reports/IndiaLocationDetailsByDatas',[
@@ -2140,12 +2234,14 @@ public function IndiaLocationDetailsByDatas($keys,$ids){
 }
 public function FutureTask(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -2203,7 +2299,7 @@ public function FutureTask(){
         $this->load->model('Menu_model');
         
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
             $userwise = '';
             $admin_id_filter    = $this->input->Post('admin_id_filter');
             $rm_filter          = $this->input->Post('rm_filter');
@@ -2285,7 +2381,7 @@ public function FutureTask(){
         if(empty($user)){redirect('Menu/main');}
         $this->load->model('Menu_model');
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
             $userwise = '';
             $admin_id_filter    = $this->input->Post('admin_id_filter');
             $rm_filter          = $this->input->Post('rm_filter');
@@ -2358,7 +2454,7 @@ public function FutureTask(){
         if(empty($user)){redirect('Menu/main');}
         $this->load->model('Menu_model');
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
             $userwise = '';
             $admin_id_filter    = $this->input->Post('admin_id_filter');
             $rm_filter          = $this->input->Post('rm_filter');
@@ -2439,7 +2535,7 @@ public function FutureTask(){
         if(empty($user)){redirect('Menu/main');}
         $this->load->model('Menu_model');
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
             $userwise = '';
             $admin_id_filter    = $this->input->Post('admin_id_filter');
             $rm_filter          = $this->input->Post('rm_filter');
@@ -2520,7 +2616,7 @@ public function FutureTask(){
         if(empty($user)){redirect('Menu/main');}
         $this->load->model('Menu_model');
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
             $userwise = '';
             $admin_id_filter    = $this->input->Post('admin_id_filter');
             $rm_filter          = $this->input->Post('rm_filter');
@@ -2606,7 +2702,7 @@ public function FutureTask(){
         $this->load->model('Menu_model');
         $this->load->model('Report_model');
         $dt                 = $this->Menu_model->get_utype($uyid);
-        $dep_name           = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
         $targetUserDatas    = $this->Menu_model->GetUserDetailsByUid($targetUID);
         
         if(empty($targetUserDatas)){redirect('Menu/Dashboard');}
@@ -2689,13 +2785,15 @@ public function FutureTask(){
     }
 public function SameStatusSinceDays(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
      $this->load->model('Report_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $days_filter        = $this->input->Post('days_filter');
@@ -2804,13 +2902,15 @@ public function SameStatusSinceDays(){
 }
 public function AfterAssignSameStatusSinceDays(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
      $this->load->model('Report_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $days_filter        = $this->input->Post('days_filter');
@@ -2918,13 +3018,15 @@ public function AfterAssignSameStatusSinceDays(){
 }
 public function AfterAssignLineManagerSameStatusSinceDays(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
      $this->load->model('Report_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $days_filter        = $this->input->Post('days_filter');
@@ -3054,13 +3156,15 @@ foreach ($sameStatusSinceDaysDatas as $obj) {
 }
 public function AfterAssignLineManagerSameStatusSinceDaysLists($sdate,$edate,$admin_id_filter,$rm_filter,$days_inclusive){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
      $this->load->model('Report_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     
         if($rm_filter !=='all'){
            $uid = $rm_filter;
@@ -3150,13 +3254,15 @@ foreach ($sameStatusSinceDaysDatas as $obj) {
 }
 public function AfterAssignLineManagerSameStatusSinceDaysTaskLog(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
      $this->load->model('Report_model');
     $dt = $this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     $days_filter        = $this->input->Post('days_filter');
@@ -3234,13 +3340,15 @@ public function AfterAssignLineManagerSameStatusSinceDaysTaskLog(){
 }
 public function FunnelTransferDetails(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $this->load->model('Report_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['sdate'])){
@@ -3281,6 +3389,8 @@ public function FunnelTransferDetails(){
 }
 public function TodaysConversionDatas($taruser_id,$sdate,$edate,$statusChange,$taskaction = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
@@ -3288,7 +3398,7 @@ public function TodaysConversionDatas($taruser_id,$sdate,$edate,$statusChange,$t
     $this->load->model('Report_model');
     
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $statusArray = explode("_", $statusChange);
     $from_status = $statusArray[0]; 
     $to_status   = $statusArray[1]; 
@@ -3305,6 +3415,8 @@ public function TodaysConversionDatas($taruser_id,$sdate,$edate,$statusChange,$t
 }
 public function TodaysConversionWithCIDDatas($cid,$sdate,$edate,$statusChange){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
@@ -3312,7 +3424,7 @@ public function TodaysConversionWithCIDDatas($cid,$sdate,$edate,$statusChange){
     $this->load->model('Report_model');
     
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $statusArray = explode("_", $statusChange);
     $from_status = $statusArray[0]; 
     $to_status   = $statusArray[1]; 
@@ -3338,12 +3450,14 @@ public function CheckRemoveCompanyLogsBetweenDate(){
     $sd             =   $sdate;
     $ed             =   $edate;
     $user           =   $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   =   $user;
     $uid            =   $user['user_id'];
     $uyid           =   $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =   $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $companyInfoCBD = $this->Report_model->GetRemoveCompanyLogs($uid,$sd,$ed);
     if(!empty($user)){
    
@@ -3358,12 +3472,14 @@ public function CheckRemoveCompanyLogsBetweenDateLogs($targetuid,$sdate,$edate){
     $sd             =   $sdate;
     $ed             =   $edate;
     $user           =   $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   =   $user;
     $uid            =   $user['user_id'];
     $uyid           =   $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =   $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $targetuidDatas = $this->Menu_model->get_userbyid($targetuid);
     $companyInfoCBD = $this->Report_model->GetRemoveCompanyLogslists($targetuid,$sd,$ed);
     if(!empty($user)){
@@ -3382,12 +3498,14 @@ public function CheckRemoveCompanyLogsBetweenDateLogs($targetuid,$sdate,$edate){
 
 public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$userwise =NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['sdate'])){
     $sdate = $_POST['sdate'];
     $edate = $_POST['edate'];
@@ -3510,6 +3628,8 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
 
     public function ClosurePipeLine(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
@@ -3520,7 +3640,7 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
 
 
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -3542,7 +3662,7 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
         }
     }else{
         $sdate              = date('Y-m-d');
-        $sdate              = '2025-02-14';
+        $sdate              = '2026-04-01';
         $edate              = date('Y-m-d');
         $rm_filter          = 'all';
         $admin_id_filter    = $uid;
@@ -3572,12 +3692,14 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
 }
     public function ClosurePipeLineDetails($ftype,$target_uid,$sdate,$edate,$userwise = NULL){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     $udetail = $this->Menu_model->get_userbyid($target_uid);
 
@@ -3599,13 +3721,15 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
 }
     public function ClosurePipeLineDetailsByCompany($ftype,$cid,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
     $cmpDatas         =  $this->Menu_model->getCompanyDetailsByCID($cid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     // dd($cmpDatas);
     $totalClosurePipeLineDatas = $this->Report_model->getAllCompanyBYRollesMaiingClosurePipeLineDetailsBYCID($cid,$ftype,$sdate,$edate);
@@ -3628,12 +3752,14 @@ public function DownloadMeetingsMomDatas($mtypes,$target_uid,$sdate,$edate,$user
 
 public function TeamVisitInTravelCluster(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             =  $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $admin_id_filter    = $this->input->Post('admin_id_filter');
     $rm_filter          = $this->input->Post('rm_filter');
     if(isset($_POST['admin_id_filter'])){
@@ -3655,7 +3781,7 @@ public function TeamVisitInTravelCluster(){
         }
     }else{
         $sdate              = date('Y-m-d');
-        $sdate              = "2025-02-14";
+        $sdate              = "2026-04-01";
         $edate              = date('Y-m-d');
         $rm_filter          = 'all';
         $admin_id_filter    = $uid;
@@ -3695,12 +3821,14 @@ public function TeamVisitInTravelCluster(){
 
 public function FunnelDetailsWithClusterIDList($mtypes,$target_uid,$clusterID,$userwise,$sdate,$edate){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 to fix HTTP 500 on null session
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(is_null($userwise)){
         $userwise = '';
     }
@@ -3730,7 +3858,7 @@ public function TodaysOperationTeamTaskPlannedByOurTeamProject(){
     $uid            = $user['user_id'];
     $uyid           = $user['type_id'];
     $dt             = $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     if(empty($user)){redirect('Menu/main');}
 
@@ -3768,7 +3896,7 @@ public function AllStatusChangedRequiredRequest(){
     $uid            = $user['user_id'];
     $uyid           = $user['type_id'];
     $dt             = $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
     if(empty($user)){redirect('Menu/main');}
 
@@ -3832,7 +3960,7 @@ public function AllStatusChangedRequiredRequest(){
         }
     }else{
         $sdate              = date('Y-m-d', strtotime('-1 month'));
-        $sdate              = "2025-02-14";
+        $sdate              = "2026-04-01";
         $edate              = date('Y-m-d');
 
        

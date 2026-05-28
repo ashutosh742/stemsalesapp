@@ -7,12 +7,15 @@ class Menu extends CI_Controller {
         parent::__construct();
          // Load models, libraries, helpers, etc.
         $this->load->model('Menu_model');
-         $this->load->helper('common_helper');
-          $this->load->helper('samestatustilldate_helper');
-$this->load->helper('taskPlanner_helper');
- $config = $this->config->load('email', true);
+        $this->load->helper('common_helper');
+        $this->load->helper('samestatustilldate_helper');
+        $this->load->helper('taskPlanner_helper');
+        $config = $this->config->load('email', true);
         $this->load->library('email');
         $this->email->initialize($this->config->item('email'));
+
+        $this->load->library('session');
+        $this->load->helper(array('url', 'cookie'));
     }
  function array_to_csv($array, $filename, $delimiter = ',') {
         $f = fopen('php://memory', 'w'); 
@@ -232,8 +235,15 @@ public function send_email($data){
                  $this->session->set_flashdata('error_message', '* You are already logged in. Please log out first to access login page.');
                 redirect('Menu/Dashboard');
             }
-            // dd($user);
-        $this->load->view('index');
+        
+            $currentTime = strtotime(date('Y-m-d H:i:s'));
+            $targetTime  = strtotime('2026-05-06 03:00:00');
+            if ($currentTime >= $targetTime) {
+                $this->load->view('index');
+            } else {
+                $this->load->view('maintainance');
+            }
+
         //  $this->load->helper('SameStatusTillDate_helper');
     }
     public function logout(){
@@ -3352,54 +3362,270 @@ $completedatetime   =   date("Y-m-d H:i:s");
         }
         return $data;
     }
-    public function login(){
-        $user       =  trim($this->input->post('user'));
-        $password   =  trim($this->input->post('password'));
 
-        if($user == '' || $password == ''){
-             $this->load->library('session');
-             $this->session->set_flashdata('error_message','* Invaild username or password.');
-             redirect('Menu/main');
-        }
 
-        $this->load->model('Menu_model');
-        $dt=$this->Menu_model->user_login($user,$password);
-        if(!empty($dt))
-        {
-            $sessArray["id"] = $dt[0]->id;
-            $sessArray["name"] = $dt[0]->name;
-            $sessArray["zone_id"] = $dt[0]->zone_id;
-            $sessArray["email"] = $dt[0]->email;
-            $sessArray["photo"] = $dt[0]->photo;
-            $sessArray["type_id"] = $dt[0]->type_id;
-            $sessArray["user_id"] = $dt[0]->user_id;
-            $sessArray["admin_id"] = $dt[0]->admin_id;
-            $this->session->set_userdata('user',$sessArray);
-            set_cookie('user[0]',$sessArray["id"],'60*60*24*30');
-            set_cookie('user[1]',$sessArray["name"],'60*60*24*30');
-            set_cookie('user[2]',$sessArray["zone_id"],'60*60*24*30');
-            set_cookie('user[3]',$sessArray["photo"],'60*60*24*30');
-            set_cookie('user[4]',$sessArray["type_id"],'60*60*24*30');
-            set_cookie('user[5]',$sessArray["user_id"],'60*60*24*30');
 
-            $data = array(
-                'user_id'   => $dt[0]->user_id       
-            );
-            // Insert into login_session table
-            $this->db->insert('login_session', $data);
+    // public function login(){
 
-        }else{
-             $this->load->library('session');
-             $this->session->set_flashdata('error_message','* Invaild username or password.');
-             redirect('Menu/main');
-        }
-        if(!empty($dt))
-        {
-            redirect('Menu/Dashboard');
-        }else{  
-            redirect('Menu/main');
-        }
+    //     $user     = trim($this->input->post('user') ?? '');
+    //     $password = trim($this->input->post('password') ?? '');
+
+    //     if($user == '' || $password == ''){
+    //          $this->load->library('session');
+    //          $this->session->set_flashdata('error_message','* Invaild username or password.');
+    //          redirect('Menu/main');
+    //     }
+
+    //     $this->load->model('Menu_model');
+    //     $dt=$this->Menu_model->user_login($user,$password);
+
+    //     if(!empty($dt))
+    //     {
+    //         $sessArray["id"] = $dt[0]->id;
+    //         $sessArray["name"] = $dt[0]->name;
+    //         $sessArray["zone_id"] = $dt[0]->zone_id;
+    //         $sessArray["email"] = $dt[0]->email;
+    //         $sessArray["photo"] = $dt[0]->photo;
+    //         $sessArray["type_id"] = $dt[0]->type_id;
+    //         $sessArray["user_id"] = $dt[0]->user_id;
+    //         $sessArray["admin_id"] = $dt[0]->admin_id;
+    //         $this->session->set_userdata('user',$sessArray);
+    //         set_cookie('user[0]',$sessArray["id"],'60*60*24*30');
+    //         set_cookie('user[1]',$sessArray["name"],'60*60*24*30');
+    //         set_cookie('user[2]',$sessArray["zone_id"],'60*60*24*30');
+    //         set_cookie('user[3]',$sessArray["photo"],'60*60*24*30');
+    //         set_cookie('user[4]',$sessArray["type_id"],'60*60*24*30');
+    //         set_cookie('user[5]',$sessArray["user_id"],'60*60*24*30');
+
+    //         $data = array(
+    //             'user_id'   => $dt[0]->user_id       
+    //         );
+    //         // Insert into login_session table
+    //         $this->db->insert('login_session', $data);
+
+    //     }else{
+    //          $this->load->library('session');
+    //          $this->session->set_flashdata('error_message','* Invaild username or password.');
+    //          redirect('Menu/main');
+    //     }
+    //     if(!empty($dt))
+    //     {
+    //         redirect('Menu/Dashboard');
+    //     }else{  
+    //         redirect('Menu/main');
+    //     }
+    // }
+
+
+
+    //    public function login()
+    // {
+       
+    //     $user     = trim($this->input->post('user') ?? '');
+    //     $password = trim($this->input->post('password') ?? '');
+
+    //     // Validation
+    //     if(empty($user) || empty($password))
+    //     {
+    //         $this->session->set_flashdata(
+    //             'error_message',
+    //             '* Invalid username or password.'
+    //         );
+
+    //         redirect('Menu/main');
+    //     }
+
+    //     // Check Login
+    //     // $dt = $this->Menu_model->user_login($user, $password);
+    //     $dt = $this->Menu_model->user_login_check($user, $password);
+
+    //     // echo $this->db->last_query();
+    //     // die;
+
+    //     // Login Failed
+    //     if(empty($dt))
+    //     {
+
+    
+    //         $this->session->set_flashdata(
+    //             'error_message',
+    //             '* Invalid username or password.'
+    //         );
+
+    //         redirect('Menu/main');
+    //     }
+
+    //     // if($dt->user_id == 100177){
+    //     //     echo "<pre>";
+    //     //     print_r($dt);
+    //     //     exit;
+    //     // }
+    // //   exit;
+    //     // Session Data
+    //     $sessArray = array(
+    //         "id"       => "$dt->id",
+    //         "name"     => "$dt->name",
+    //         "zone_id"  => "$dt->zone_id",
+    //         "email"    => "$dt->email",
+    //         "photo"    => "$dt->photo",
+    //         "type_id"  => "$dt->type_id",
+    //         "user_id"  => "$dt->user_id",
+    //         "admin_id" => "$dt->admin_id"
+    //     );
+
+    //     // Set Session
+    //     $this->session->set_userdata('user', $sessArray);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | COOKIES
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     $cookie_time = 60 * 60 * 24 * 30; // 30 days
+
+    //     set_cookie([
+    //         'name'     => 'user_id',
+    //         'value'    => "$dt->user_id",
+    //         'expire'   => $cookie_time,
+    //         'secure'   => false, // true if HTTPS
+    //         'httponly' => true
+    //     ]);
+
+    //     set_cookie([
+    //         'name'     => 'user_name',
+    //         'value'    => "$dt->name",
+    //         'expire'   => $cookie_time,
+    //         'secure'   => false,
+    //         'httponly' => true
+    //     ]);
+
+    //     set_cookie([
+    //         'name'     => 'user_type',
+    //         'value'    => "$dt->type_id",
+    //         'expire'   => $cookie_time,
+    //         'secure'   => false,
+    //         'httponly' => true
+    //     ]);
+
+    //     set_cookie([
+    //         'name'     => 'user_photo',
+    //         'value'    => "$dt->photo",
+    //         'expire'   => $cookie_time,
+    //         'secure'   => false,
+    //         'httponly' => true
+    //     ]);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | LOGIN LOG
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     // $this->db->insert('login_session', [
+    //     //     'user_id'    => $dt->user_id,
+    //     //     'log_in'     => "yes"
+    //     // ]);
+
+    //     redirect('Menu/Dashboard');
+    // }
+
+
+
+
+
+    public function login()
+{
+    $user     = trim($this->input->post('user'));
+    $password = trim($this->input->post('password'));
+
+    // $user     = trim($this->input->post('user', TRUE));
+    // $password = trim($this->input->post('password', TRUE));
+
+    // Validation
+    if ($user === '' || $password === '') {
+        $this->session->set_flashdata('error_message', '* Invalid username or password.');
+        redirect('Menu/main');
+        return;
     }
+
+    // Login check
+    $dt = $this->Menu_model->user_login_check($user, $password);
+
+    // dd($dt);
+
+    if (empty($dt)) {
+        $this->session->set_flashdata('error_message', '* Invalid username or password.');
+        redirect('Menu/main');
+        return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CLEAN SESSION (IMPORTANT FIX)
+    |--------------------------------------------------------------------------
+    | Store only minimal data to avoid session blob slowdown
+    */
+
+    $sessArray = array(
+        "id"       => "$dt->id",
+        "name"     => "$dt->name",
+        "photo"    => "$dt->photo",
+        "type_id"  => "$dt->type_id",
+        "user_id"  => "$dt->user_id",
+    );
+
+    $this->session->set_userdata('user', $sessArray);
+
+    // FORCE session write (prevents lock delays in CI3 database driver)
+    session_write_close();
+
+    /*
+    |--------------------------------------------------------------------------
+    | COOKIES (OPTIMIZED - avoid unnecessary repeated writes)
+    |--------------------------------------------------------------------------
+    */
+
+    $cookie_time = 60 * 60 * 24 * 30;
+
+    set_cookie([
+        'name'     => 'user_id',
+        'value'    => $dt->user_id,
+        'expire'   => $cookie_time,
+        'secure'   => false,
+        'httponly' => true
+    ]);
+
+    set_cookie([
+        'name'     => 'user_name',
+        'value'    => $dt->name,
+        'expire'   => $cookie_time,
+        'secure'   => false,
+        'httponly' => true
+    ]);
+
+    set_cookie([
+        'name'     => 'user_type',
+        'value'    => $dt->type_id,
+        'expire'   => $cookie_time,
+        'secure'   => false,
+        'httponly' => true
+    ]);
+
+    set_cookie([
+        'name'     => 'user_photo',
+        'value'    => $dt->photo,
+        'expire'   => $cookie_time,
+        'secure'   => false,
+        'httponly' => true
+    ]);
+
+    $this->session->sess_regenerate(TRUE);
+
+    redirect('Menu/Dashboard');
+}
+
+
     public function Mytarget(){
         date_default_timezone_set("Asia/Calcutta");
         $tdate=date('Y-m-d H:i:s');
@@ -4423,6 +4649,7 @@ $completedatetime   =   date("Y-m-d H:i:s");
              foreach($presentation as $prs){
                  $presentationdata .=$prs.',';
              }
+            //  $presentationdata = rtrim($presentationdata, ',');
              $presentationdata = rtrim($presentationdata, ',');
              //  presentation End
  
@@ -4782,7 +5009,6 @@ public function daysc(){
                 $pendingautotaskcmpcnt = sizeof($pendingtaskcmp);  
 
                 if($pendingautotaskcmpcnt > 0){
-
                     $this->session->set_flashdata('error_message','Total '. $pendingautotaskcmpcnt . '* Pending Auto Task, First Complete Your Pending Autotask Before Going Task Planner Page');
                     redirect('Menu/DayManagement');
                         
@@ -5536,13 +5762,15 @@ public function daysc(){
             $this->session->set_flashdata('error_message'," * Please do not forget to update the leads for todays $pendilgForLeadUpdatescnt RP meetings..");
             // redirect("Menu/Dashboard");
         }
-        if(in_array($cutype_id,[13,24,4])){
+        if(in_array($cutype_id,[13,24,4,22])){
+            if($uid != 100062){
             $teamnewleadsadded = $this->Menu_model->GetAddNewLeadComapny($uid);
-            $teamnewleadsaddedCNT = sizeof($teamnewleadsadded);
-            if($teamnewleadsaddedCNT > 0){
-                $this->load->library('session');
-                $this->session->set_flashdata('error_message'," * Pending For Leads Check After Add - $teamnewleadsaddedCNT company");
-                redirect("Menu/Dashboard");
+            $teamnewleadsaddedCNT = count($teamnewleadsadded);
+                if($teamnewleadsaddedCNT > 0){
+                    $this->load->library('session');
+                    $this->session->set_flashdata('error_message'," * Pending For Leads Check After Add - $teamnewleadsaddedCNT company");
+                    redirect("Menu/Dashboard");
+                }
             }
         }
 
@@ -6068,7 +6296,7 @@ public  function checkPlannerDate2($date) {
         $requestForTodaysTaskPlan   = $_POST['requestForTodaysTaskPlan'];
         $taskcnt                    = $_POST['taskcnt'];
         $would_you_want             = $_POST['would_you_want'];
-        $unfortunately_message      = trim($_POST['unfortunately_message']);
+        $unfortunately_message      = trim($_POST['unfortunately_message'] ?? '');
       
         if (!empty($unfortunately_message)) {
             $requestForTodaysTaskPlan = $unfortunately_message . '. - ' . $requestForTodaysTaskPlan;
@@ -6499,243 +6727,618 @@ public  function checkPlannerDate2($date) {
         }
     }
 */
-public function Dashboard(){
-        date_default_timezone_set("Asia/Calcutta");
-        if(isset($_POST['tdate'])){
-        $tdate = $_POST['tdate'];
-        }
-        else{
-            $tdate = date('Y-m-d');
-        }
-        //  $tdate = '2025-08-21';
+// public function Dashboard(){
+
+
+//         date_default_timezone_set("Asia/Calcutta");
+//         if(isset($_POST['tdate'])){
+//         $tdate = $_POST['tdate'];
+//         }
+//         else{
+//             $tdate = date('Y-m-d');
+//         }
+//         //  $tdate = '2025-08-21';
     
-         
-        $this->load->library('session');
-        $this->load->model('Menu_model');
-        $this->load->model('Report_model');
+//         $this->load->library('session');
+//         $this->load->model('Menu_model');
+//         $this->load->model('Report_model');
         
-        $user = $this->session->userdata('user');
-        $data['user'] = $user;
-        $uid = $user['user_id'];
-        $uyid =  $user['type_id'];
-        if(empty($user)){
-            $this->session->set_flashdata('error_message', '* Kindly log in before starting your session.');
-            redirect('Menu/main');
-        }
+//         $user = $this->session->userdata('user');
+//         $data['user'] = $user;
+//         $uid = $user['user_id'];
+//         $uyid =  $user['type_id'];
+//         $this->session->unset_userdata('success_message');
+//         $this->session->unset_userdata('error_message');
 
-        // $handoverToAccountPending = $this->Menu_model->GetPendingHandoverToAccountFormNotSubmit($uid);
-        // if(sizeof($handoverToAccountPending) > 0){
-        //     $handover_id            = $handoverToAccountPending[0]->id;
-        //     $handover_client_name   = $handoverToAccountPending[0]->client_name;
-        //      $this->session->set_flashdata('error_message', "* You have pending handover to account form for $handover_client_name. Please submit it first.");
-        //     redirect('Menu/handoverToaccount/'.$handover_id);
-        // }
+//         if(empty($user)){
+//             $this->session->set_flashdata('error_message', '* Kindly log in before starting your session.');
+//             redirect('Menu/main');
+//         }
+
+//         // if($uid == 100177){
+//         //     dd($user);
+//         // }
+
+//         // $handoverToAccountPending = $this->Menu_model->GetPendingHandoverToAccountFormNotSubmit($uid);
+//         // if(sizeof($handoverToAccountPending) > 0){
+//         //     $handover_id            = $handoverToAccountPending[0]->id;
+//         //     $handover_client_name   = $handoverToAccountPending[0]->client_name;
+//         //      $this->session->set_flashdata('error_message', "* You have pending handover to account form for $handover_client_name. Please submit it first.");
+//         //     redirect('Menu/handoverToaccount/'.$handover_id);
+//         // }
 
 
-        $myid = $uid;
-        if($uyid == 3 || $uyid == 4 || $uyid == 5 || $uyid == 7 || $uyid == 8 || $uyid == 9 || $uyid == 11 || $uyid == 12 || $uyid == 13 || $uyid == 15){
-            $user_day = $this->Menu_model->get_daydetail($uid,date("Y-m-d"));
-            if(sizeof($user_day) == 0){
-                $this->session->set_flashdata('error_message','* Please Start Your Day');
-                redirect('Menu/DayManagement');
-            } 
-        }
+//         $myid = $uid;
+//         if($uyid == 3 || $uyid == 4 || $uyid == 5 || $uyid == 7 || $uyid == 8 || $uyid == 9 || $uyid == 11 || $uyid == 12 || $uyid == 13 || $uyid == 15){
+//             $user_day = $this->Menu_model->get_daydetail($uid,date("Y-m-d"));
+//             if(sizeof($user_day) == 0){
+//                 $this->session->set_flashdata('error_message','* Please Start Your Day');
+//                 redirect('Menu/DayManagement');
+//             } 
+//         }
           
-        if($uid=='100103'){$uid=45;}
-        if($uid=='100149'){$uid=45;}
-        if($uid=='100142'){$uid=2;}
-        $dt=$this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+//         if($uid=='100103'){$uid=45;}
+//         if($uid=='100149'){$uid=45;}
+//         if($uid=='100142'){$uid=2;}
+//         $dt=$this->Menu_model->get_utype($uyid);
+//         $dep_name = $dt[0]->name;
 
 
-        // $fr     = $this->Menu_model->get_freport($uid);
-        // $bdc    = $this->Menu_model->get_bdtcom($uid);
-        // $mbdc   = $this->Menu_model->get_mbdc($uid);
+//         // $fr     = $this->Menu_model->get_freport($uid);
+//         // $bdc    = $this->Menu_model->get_bdtcom($uid);
+//         // $mbdc   = $this->Menu_model->get_mbdc($uid);
+
+//         $fr        = [];
+//         $callr        = [];
+//         $emailr        = [];
+//         $meetingr        = [];
+//         $patc        = [];
+//         $tatc        = [];
+//         $meetingr        = [];
+//         $patc        = [];
+//         $tatc        = [];
+//         $pate        = [];
+//         $tate        = [];
+//         $patm        = [];
+//         $tatm        = [];
+//         $sc        = [];
+//         $tptask        = [];
+//         $pstc        = [];
+//         $poc        = [];
+//         $vpoc        = [];
+//         $tnos        = [];
+//         $revenue        = 0;
+//         $revenue        = [];
+//         $tsww        = [];
+//         $bdc        = [];
+//         $mbdc        = [];
+//         $bc        = [];
 
 
-        $atid=1;
-        // $callr      = $this->Menu_model->get_callingr($atid,$uid,$tdate);
-        // $patc       = $this->Menu_model->get_pat($atid,$uid,$tdate);
-        // $tatc       = $this->Menu_model->get_tat($atid,$uid,$tdate);
-        $atid=2;
-        // $emailr         = $this->Menu_model->get_callingr($atid,$uid,$tdate);
-        // $pate           = $this->Menu_model->get_pat($atid,$uid,$tdate);
-        // $tate           = $this->Menu_model->get_tat($atid,$uid,$tdate);
-        $atid=3;
-        // $meetingr       = $this->Menu_model->get_callingr($atid,$uid,$tdate);
-        // $patm           = $this->Menu_model->get_pat($atid,$uid,$tdate);
-        // $tatm           = $this->Menu_model->get_tat($atid,$uid,$tdate);
-        $pendingt       = $this->Menu_model->get_pendingt($uid,$tdate);
 
-        $totalt=$this->Menu_model->get_totalt($myid,$tdate);
-        // echo $this->db->last_query();
-        // die;
-        $ttdone     = $this->Menu_model->get_ttdone($uid,$tdate);
-        $ttd        = $this->Menu_model->get_totaltd($uid,$tdate);
-        // $upt        = $this->Menu_model->get_unplant($uid,$tdate);
-        // $tsww       = $this->Menu_model->get_tswwork($uid,$tdate);
-        // $tptask     = $this->Menu_model->get_tptask($uid);
-        // $sc         = $this->Menu_model->get_scon($uid,$tdate);
+//         $atid=1;
+//         // $callr      = $this->Menu_model->get_callingr($atid,$uid,$tdate);
+//         // $patc       = $this->Menu_model->get_pat($atid,$uid,$tdate);
+//         // $tatc       = $this->Menu_model->get_tat($atid,$uid,$tdate);
+//         $atid=2;
+//         // $emailr         = $this->Menu_model->get_callingr($atid,$uid,$tdate);
+//         // $pate           = $this->Menu_model->get_pat($atid,$uid,$tdate);
+//         // $tate           = $this->Menu_model->get_tat($atid,$uid,$tdate);
+//         $atid=3;
+//         // $meetingr       = $this->Menu_model->get_callingr($atid,$uid,$tdate);
+//         // $patm           = $this->Menu_model->get_pat($atid,$uid,$tdate);
+//         // $tatm           = $this->Menu_model->get_tat($atid,$uid,$tdate);
+//         $pendingt       = $this->Menu_model->get_pendingt($uid,$tdate);
+
+//         $totalt=$this->Menu_model->get_totalt($myid,$tdate);
+//         // echo $this->db->last_query();
+//         // die;
+//         $ttdone     = $this->Menu_model->get_ttdone($uid,$tdate);
+//         $ttd        = $this->Menu_model->get_totaltd($uid,$tdate);
+//         // $upt        = $this->Menu_model->get_unplant($uid,$tdate);
+//         // $tsww       = $this->Menu_model->get_tswwork($uid,$tdate);
+//         // $tptask     = $this->Menu_model->get_tptask($uid);
+//         // $sc         = $this->Menu_model->get_scon($uid,$tdate);
 
 
 
-        $barg               = $this->Menu_model->get_bargdetail($uid,$tdate);
-        $vm_meetings        = $this->Menu_model->GetTodaysVirtualMeeting($uid,$tdate);
-        $autotasktimenew    = $this->Menu_model->autotasktimenew($uid,$tdate);
+//         $barg               = $this->Menu_model->get_bargdetail($uid,$tdate);
+//         $vm_meetings        = $this->Menu_model->GetTodaysVirtualMeeting($uid,$tdate);
+//         $autotasktimenew    = $this->Menu_model->autotasktimenew($uid,$tdate);
 
-        // $positive       = $this->Menu_model->get_positive();
-        // $vpositive      = $this->Menu_model->get_vpositive();
-        // $positveNAP     = $this->Menu_model->get_positiveNAP();
-        // $vpositveNAP    = $this->Menu_model->get_vpositiveNAP();
-        // $cmtd           = $this->Menu_model->get_clusterTaskDetails($uid,$tdate);
-        // $clusterFunnel  = $this->Menu_model->get_clusterFunnel($uid);
+//         // $positive       = $this->Menu_model->get_positive();
+//         // $vpositive      = $this->Menu_model->get_vpositive();
+//         // $positveNAP     = $this->Menu_model->get_positiveNAP();
+//         // $vpositveNAP    = $this->Menu_model->get_vpositiveNAP();
+//         // $cmtd           = $this->Menu_model->get_clusterTaskDetails($uid,$tdate);
+//         // $clusterFunnel  = $this->Menu_model->get_clusterFunnel($uid);
       
         
-        $tnos=0;
-        $revenue=0;
-        $poc=0;
-        $vpoc=0;
-        foreach($positive as $po){
-            $poc++;
-            $iniid = $po->cid_id;
-            $tos=$this->Menu_model->get_initbyid($iniid);
-            $tnos +=  (int)$tos[0]->noofschools;
-            $revenue +=  (int)$tos[0]->fbudget;
-        }
-        foreach($vpositive as $vpo){
-            $vpoc++;
-            $iniid = $vpo->cid_id;
-            $tost=$this->Menu_model->get_initbyid($iniid);
-            $tnos +=  (int)$tost[0]->noofschools;
-            $revenue +=  (int)$tost[0]->fbudget;
-        }
-        $pstc=$this->Menu_model->get_pstc($uid);
+//         // $tnos=0;
+//         // $revenue=0;
+//         // $poc=0;
+//         // $vpoc=0;
+//         // foreach($positive as $po){
+//         //     $poc++;
+//         //     $iniid = $po->cid_id;
+//         //     $tos=$this->Menu_model->get_initbyid($iniid);
+//         //     $tnos +=  (int)$tos[0]->noofschools;
+//         //     $revenue +=  (int)$tos[0]->fbudget;
+//         // }
+//         // foreach($vpositive as $vpo){
+//         //     $vpoc++;
+//         //     $iniid = $vpo->cid_id;
+//         //     $tost=$this->Menu_model->get_initbyid($iniid);
+//         //     $tnos +=  (int)$tost[0]->noofschools;
+//         //     $revenue +=  (int)$tost[0]->fbudget;
+//         // }
+//         // $pstc=$this->Menu_model->get_pstc($uid);
+
+
+//         $pendingautotaskcmp = $this->Menu_model->get_PendingAutoTask($uid);
+//        $pendingautotaskcmpcnt = sizeof($pendingautotaskcmp);
+//        if($pendingautotaskcmpcnt > 0){
+//            $this->session->set_flashdata('error_message','Total '. $pendingautotaskcmpcnt . '* Pending Auto Task, First Complete Your Pending Autotask Before Going Task Planner Page');
+//            redirect('Menu/Dashboard2');
+//        }else{
+//         if($uyid == 4 || $uyid == 13){
+//             $checknewleads = $this->Menu_model->GetOldAddNewLeadComapny($uid);
+//             $newleadscnt = sizeof($checknewleads);
+//             if($newleadscnt > 0){
+//                 $this->session->set_flashdata('error_message',' * Total '. $newleadscnt . '* pending companies to check after adding new leads. Please check them first.');
+//                 redirect('Menu/PendingCompaniestoCheckAfterNewLeads');
+//             }
+//         }
+//     } 
+//     // if($pendingautotaskcmpcnt == 0){
+//     //         $checkPlannerSetOrNot = $this->Menu_model->ChekPlannerStartSetOrNot($uid,date("Y-m-d"));
+//     //         if(sizeof($checkPlannerSetOrNot) == 0){
+               
+//     //         }
+//     //     }
+    
+// if(!empty($user)){
+
+
+
+//         // $allBDRequestDatas  =  $this->Menu_model->CheckBDRequestPendingByLMForAPR($uid);
+        
+//         // if(in_array($uyid,[4,13,24,15,19,20,21,22,23])) {
+//         //     // For Line Manager Roles
+//         //     $approve_status_pending_by_lm           = $allBDRequestDatas[0]->approve_status_pending_by_lm;
+//         //     if($approve_status_pending_by_lm > 0) {
+//         //         $this->session->set_flashdata('error_message', ' * You have '.$approve_status_pending_by_lm.' BD Request pending for Approval by Line Manager. Please approve them first.');
+//         //         redirect('Menu/BDRequestDetails');
+//         //     }
+//         // }   
+
+//         // if(in_array($uyid,[1,2])) {
+//         //     // For Admin Roles
+//         //     $approve_admin_status_pending_by_admin  = $allBDRequestDatas[0]->approve_admin_status_pending_by_admin;
+//         //     if($approve_admin_status_pending_by_admin > 0) {
+//         //         $this->session->set_flashdata('error_message', ' * You have '.$approve_admin_status_pending_by_admin.' BD Request pending for Approval by Admin. Please wait until Admin approve them.');
+//         //         redirect('Menu/BDRequestDetails');
+//         //     }
+//         // }
+
+
+//     if($uyid == 15){
+//          // Start Day Checking Manadatorory
+        
+//         $pendingDayCheckData        = $this->CheckDaysCheckPendingByUser();
+//         $dayCheckPendingCount       = $pendingDayCheckData['pending'];
+//         $dayCheckPendingUsername    = $pendingDayCheckData['username'];
+//         if($dayCheckPendingCount > 0){
+//             $this->load->library('session');
+//             $this->session->unset_userdata('error_message');
+//             $variable   =  "error_message";
+//             $message    = "* A total of $dayCheckPendingCount users are pending for today’s Day Check check. Pending user list: $dayCheckPendingUsername";
+//             $this->session->set_flashdata($variable,$message);
+//             redirect('Reports/DayManagementChecking');
+//         }
+//         // Closed Day Checking Manadatorory
+//         // Start Task Checking Manadatorory
+        
+//         $pendingTaskCheckData        = $this->CheckTaskCheckPendingByUser();
+//         $taskCheckPendingCount       = $pendingTaskCheckData['pending'];
+//         $taskCheckPendingUsername    = $pendingTaskCheckData['username'];
+//         if($taskCheckPendingCount > 0){
+//             $this->load->library('session');
+//             $this->session->unset_userdata('error_message');
+//             $variable   =  "error_message";
+//             $message    = "* A total of $taskCheckPendingCount users are pending for today’s Task check. Pending user list: $taskCheckPendingUsername";
+//             $this->session->set_flashdata($variable,$message);
+//             redirect('Menu/TeamTaskCheck');
+//         }
+//             $pendingStatusChangeTaskCheckData        = $this->CheckStatusChangeTaskCheckPendingByUser();
+//             $statusChangeTaskCheckPendingCount       = $pendingStatusChangeTaskCheckData['pending'];
+//             $tatusChangeTaskCheckPendingUsername    = $pendingStatusChangeTaskCheckData['username'];
+//             if($statusChangeTaskCheckPendingCount > 0){
+//                 $this->load->library('session');
+//                 $this->session->unset_userdata('error_message');
+//                 $variable   =  "error_message";
+//                 $message    = "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Status Task check. Pending user list: $tatusChangeTaskCheckPendingUsername";
+//                 $this->session->set_flashdata($variable,$message);
+//                 redirect('Menu/TeamStatusChangeTaskCheck');
+//             }
+        
+//         // Closed Task Checking Manadatorory
+//         // $this->load->view($dep_name.'/index',['myid'=>$myid,'cmtd'=>$cmtd,'ttdone'=>$ttdone,'upt'=>$upt,'user'=>$user,'fr'=>$fr,'callr'=>$callr,'emailr'=>$emailr,'meetingr'=>$meetingr,'pendingt'=>$pendingt,'totalt'=>$totalt,'patc'=>$patc,'tatc'=>$tatc,'pate'=>$pate,'tate'=>$tate,'patm'=>$patm,'tatm'=>$tatm,'sc'=>$sc,'tptask'=>$tptask,'ttd'=>$ttd,'barg'=>$barg,'uid'=>$uid,'pstc'=>$pstc,'poc'=>$poc,'vpoc'=>$vpoc,'tnos'=>$tnos,'revenue'=>$revenue,'tsww'=>$tsww,'bdc'=>$bdc,'tdate'=>$tdate,'autotasktimenew'=>$autotasktimenew,'mbdc'=>$mbdc,'vm_meetings'=>$vm_meetings]);
+
+
+//         $this->load->view($dep_name . '/index', [
+//     'myid'             => $myid,
+//     'cmtd'             => $cmtd,
+//     'ttdone'           => $ttdone,
+//     'upt'              => $upt,
+//     'user'             => $user,
+
+//     'fr'               => $fr,
+//     'callr'            => $callr,
+//     'emailr'           => $emailr,
+//     'meetingr'         => $meetingr,
+//     'pendingt'         => $pendingt,
+//     'totalt'           => $totalt,
+
+//     'patc'             => $patc,
+//     'tatc'             => $tatc,
+//     'pate'             => $pate,
+//     'tate'             => $tate,
+//     'patm'             => $patm,
+//     'tatm'             => $tatm,
+
+//     'sc'               => $sc,
+//     'tptask'           => $tptask,
+//     'ttd'              => $ttd,
+//     'barg'             => $barg,
+//     'uid'              => $uid,
+//     'pstc'             => $pstc,
+
+//     'poc'              => $poc,
+//     'vpoc'             => $vpoc,
+//     'tnos'             => $tnos,
+//     'revenue'          => $revenue,
+//     'tsww'             => $tsww,
+//     'bdc'              => $bdc,
+
+//     'tdate'            => $tdate,
+//     'autotasktimenew'  => $autotasktimenew,
+//     'mbdc'             => $mbdc,
+//     'vm_meetings'      => $vm_meetings
+// ]);
+
+
+//     } else{
+     
+//          if($uyid == 13){
+//         // Start Status Change Task Checking Manadatorory
+       
+//             $pendingStatusChangeTaskCheckData        = $this->CheckStatusChangeTaskCheckPendingByUser();
+//             $statusChangeTaskCheckPendingCount       = $pendingStatusChangeTaskCheckData['pending'];
+//             $tatusChangeTaskCheckPendingUsername    = $pendingStatusChangeTaskCheckData['username'];
+//             if($statusChangeTaskCheckPendingCount > 0){
+//                 $this->load->library('session');
+//                 $this->session->unset_userdata('error_message');
+//                 $variable   =  "error_message";
+//                 $message    = "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Task Status check. Pending user list: $tatusChangeTaskCheckPendingUsername";
+//                 $this->session->set_flashdata($variable,$message);
+//                 // redirect('Menu/TeamStatusChangeTaskCheck');
+//             }
+//         // Closed Status Change Task Checking Manadatorory
+//          }
+    
    
-        $pendingautotaskcmp = $this->Menu_model->get_PendingAutoTask($uid);
-       $pendingautotaskcmpcnt = sizeof($pendingautotaskcmp);
-       if($pendingautotaskcmpcnt > 0){
-           $this->session->set_flashdata('error_message','Total '. $pendingautotaskcmpcnt . '* Pending Auto Task, First Complete Your Pending Autotask Before Going Task Planner Page');
-           redirect('Menu/Dashboard2');
-       }else{
-        if($uyid == 4 || $uyid == 13){
+//     //    if($uyid != 15){
+//     //         $checkReviewStartOrNot = $this->Menu_model->CheckReviewStartOrNot($uid);
+//     //         if(sizeof($checkReviewStartOrNot) > 0){
+//     //             $checkReviewStartOrNot_review_type = $checkReviewStartOrNot[0]->reviewtype;
+//     //             $this->load->library('session');
+//     //             $this->session->set_flashdata('pending_message'," * Please Close Your $checkReviewStartOrNot_review_type Review Before Going Your Dashboard Page");
+//     //             redirect("Menu/AllReviewPlaing");
+//     //         }
+//     //     }
+//             // $this->load->view($dep_name.'/index',['myid'=>$myid,'clusterFunnel'=> $clusterFunnel ,'ttdone'=>$ttdone,'user'=>$user,'fr'=>$fr,'callr'=>$callr,'emailr'=>$emailr,'meetingr'=>$meetingr,'pendingt'=>$pendingt,'totalt'=>$totalt,'patc'=>$patc,'tatc'=>$tatc,'pate'=>$pate,'tate'=>$tate,'patm'=>$patm,'tatm'=>$tatm,'sc'=>$sc,'tptask'=>$tptask,'ttd'=>$ttd,'barg'=>$barg,'uid'=>$uid,'pstc'=>$pstc,'poc'=>$poc,'vpoc'=>$vpoc,'tnos'=>$tnos,'revenue'=>$revenue,'tsww'=>$tsww,'bdc'=>$bdc,'tdate'=>$tdate,'autotasktimenew'=>$autotasktimenew,'mbdc'=>$mbdc,'vm_meetings'=>$vm_meetings]);
+
+
+//   $this->load->view($dep_name . '/index', [
+//     // 'myid'             => $myid,
+//     // 'clusterFunnel'    => $clusterFunnel,
+//     'ttdone'           => $ttdone,
+//     'user'             => $user,
+//     'fr'               => $fr,
+//     'callr'            => $callr,
+//     'emailr'           => $emailr,
+//     'meetingr'         => $meetingr,
+//     'pendingt'         => $pendingt,
+//     'totalt'           => $totalt,
+
+//     'patc'             => $patc,
+//     'tatc'             => $tatc,
+//     'pate'             => $pate,
+//     'tate'             => $tate,
+//     'patm'             => $patm,
+//     'tatm'             => $tatm,
+
+//     'sc'               => $sc,
+//     'tptask'           => $tptask,
+//     'ttd'              => $ttd,
+//     'barg'             => $barg,
+//     'uid'              => $uid,
+//     'pstc'             => $pstc,
+
+//     'poc'              => $poc,
+//     'vpoc'             => $vpoc,
+//     'tnos'             => $tnos,
+//     'revenue'          => $revenue,
+//     'tsww'             => $tsww,
+//     'bdc'              => $bdc,
+
+//     'tdate'            => $tdate,
+//     'autotasktimenew'  => $autotasktimenew,
+//     'mbdc'             => $mbdc,
+//     'vm_meetings'      => $vm_meetings
+// ]);
+
+//       }  
+//  }else{
+//     redirect('Menu/main');  
+// }
+    
+// }
+
+
+
+
+
+public function Dashboard()
+{
+    date_default_timezone_set("Asia/Kolkata");  // Updated deprecated timezone
+
+    // Determine selected date
+    if (isset($_POST['tdate'])) {
+        $tdate = $_POST['tdate'];
+    } else {
+        $tdate = date('Y-m-d');
+    }
+
+    $this->load->library('session');
+    $this->load->model('Menu_model');
+    $this->load->model('Report_model');
+
+    $user = $this->session->userdata('user');
+    $data['user'] = $user;
+    $uid = $user['user_id'] ?? null;
+    $uyid = $user['type_id'] ?? null;
+
+    // $this->session->unset_userdata('success_message');
+    // $this->session->unset_userdata('error_message');
+
+    // Redirect if not logged in
+    if (empty($user)) {
+        $this->session->set_flashdata('error_message', '* Kindly log in before starting your session.');
+        redirect('Menu/main');
+    }
+
+    // Map specific users
+    if ($uid == '100103') { $uid = 45; }
+    if ($uid == '100149') { $uid = 45; }
+    if ($uid == '100142') { $uid = 2; }
+
+    $myid = $uid;
+
+    // Day start check for certain roles
+    if (in_array($uyid, [3, 4, 5, 7, 8, 9, 11, 12, 13, 15])) {
+        $user_day = $this->Menu_model->get_daydetail($uid, date("Y-m-d"));
+        if (count($user_day) == 0) {
+            $this->session->set_flashdata('error_message', '* Please Start Your Day');
+            redirect('Menu/DayManagement');
+        }
+    }
+
+    // Get department name
+    $dt = $this->Menu_model->get_utype($uyid);
+    $dep_name = $dt[0]->name ?? 'default_department';
+
+    // Initialize all view variables
+    $fr = $callr = $emailr = $meetingr = [];
+    $patc = $tatc = $pate = $tate = $patm = $tatm = [];
+    $sc = $tptask = $pstc = [];
+    $poc = $vpoc = $tnos = 0;
+    $revenue = [];
+    $tsww = $bdc = $mbdc = $bc = [];
+    $cmtd = $clusterFunnel = $upt = [];
+    $autotasktimenew = [];
+
+    // Fetch data (kept commented as in original; uncomment if needed)
+    // $fr         = $this->Menu_model->get_freport($uid);
+    // $callr      = $this->Menu_model->get_callingr(1, $uid, $tdate);
+    // $emailr     = $this->Menu_model->get_callingr(2, $uid, $tdate);
+    // $meetingr   = $this->Menu_model->get_callingr(3, $uid, $tdate);
+    // $patc       = $this->Menu_model->get_pat(1, $uid, $tdate);
+    // $tatc       = $this->Menu_model->get_tat(1, $uid, $tdate);
+    // $pate       = $this->Menu_model->get_pat(2, $uid, $tdate);
+    // $tate       = $this->Menu_model->get_tat(2, $uid, $tdate);
+    // $patm       = $this->Menu_model->get_pat(3, $uid, $tdate);
+    // $tatm       = $this->Menu_model->get_tat(3, $uid, $tdate);
+    // $sc         = $this->Menu_model->get_scon($uid, $tdate);
+    // $tptask     = $this->Menu_model->get_tptask($uid);
+    // $tsww       = $this->Menu_model->get_tswwork($uid, $tdate);
+    // $pstc       = $this->Menu_model->get_pstc($uid);
+    // $cmtd       = $this->Menu_model->get_clusterTaskDetails($uid, $tdate);
+    // $clusterFunnel = $this->Menu_model->get_clusterFunnel($uid);
+    // $upt        = $this->Menu_model->get_unplant($uid, $tdate);
+
+
+
+    $pendingt    = $this->Menu_model->get_pendingt($uid, $tdate);
+    $totalt      = $this->Menu_model->get_totalt($myid, $tdate);
+    // $ttdone      = $this->Menu_model->get_ttdone($uid, $tdate);
+    // $ttd         = $this->Menu_model->get_totaltd($uid, $tdate);
+    $barg        = $this->Menu_model->get_bargdetail($uid, $tdate);
+    $vm_meetings = $this->Menu_model->GetTodaysVirtualMeeting($uid, $tdate);
+    $autotasktimenew = $this->Menu_model->autotasktimenew($uid, $tdate);
+
+    $ttdone = [];
+    $ttd    = [];
+
+    // Pending auto-task check
+    $pendingautotaskcmp = $this->Menu_model->get_PendingAutoTask($uid);
+    $pendingautotaskcmpcnt = count($pendingautotaskcmp);
+    if ($pendingautotaskcmpcnt > 0) {
+        $this->session->set_flashdata('error_message', 'Total ' . $pendingautotaskcmpcnt . ' * Pending Auto Task, First Complete Your Pending Autotask Before Going Task Planner Page');
+        redirect('Menu/Dashboard2');
+    } else {
+        if (in_array($uyid, [4, 13])) {
             $checknewleads = $this->Menu_model->GetOldAddNewLeadComapny($uid);
-            $newleadscnt = sizeof($checknewleads);
-            if($newleadscnt > 0){
-                $this->session->set_flashdata('error_message',' * Total '. $newleadscnt . '* pending companies to check after adding new leads. Please check them first.');
+            $newleadscnt = count($checknewleads);
+            if ($newleadscnt > 0) {
+                $this->session->set_flashdata('error_message', ' * Total ' . $newleadscnt . ' * pending companies to check after adding new leads. Please check them first.');
                 redirect('Menu/PendingCompaniestoCheckAfterNewLeads');
             }
         }
-    } 
-    // if($pendingautotaskcmpcnt == 0){
-    //         $checkPlannerSetOrNot = $this->Menu_model->ChekPlannerStartSetOrNot($uid,date("Y-m-d"));
-    //         if(sizeof($checkPlannerSetOrNot) == 0){
-               
-    //         }
-    //     }
-    
-if(!empty($user)){
+    }
 
-
-
-        // $allBDRequestDatas  =  $this->Menu_model->CheckBDRequestPendingByLMForAPR($uid);
-        
-        // if(in_array($uyid,[4,13,24,15,19,20,21,22,23])) {
-        //     // For Line Manager Roles
-        //     $approve_status_pending_by_lm           = $allBDRequestDatas[0]->approve_status_pending_by_lm;
-        //     if($approve_status_pending_by_lm > 0) {
-        //         $this->session->set_flashdata('error_message', ' * You have '.$approve_status_pending_by_lm.' BD Request pending for Approval by Line Manager. Please approve them first.');
-        //         redirect('Menu/BDRequestDetails');
-        //     }
-        // }   
-
-        // if(in_array($uyid,[1,2])) {
-        //     // For Admin Roles
-        //     $approve_admin_status_pending_by_admin  = $allBDRequestDatas[0]->approve_admin_status_pending_by_admin;
-        //     if($approve_admin_status_pending_by_admin > 0) {
-        //         $this->session->set_flashdata('error_message', ' * You have '.$approve_admin_status_pending_by_admin.' BD Request pending for Approval by Admin. Please wait until Admin approve them.');
-        //         redirect('Menu/BDRequestDetails');
-        //     }
-        // }
-
-
-    if($uyid == 15){
-         // Start Day Checking Manadatorory
-        
-        $pendingDayCheckData        = $this->CheckDaysCheckPendingByUser();
-        $dayCheckPendingCount       = $pendingDayCheckData['pending'];
-        $dayCheckPendingUsername    = $pendingDayCheckData['username'];
-        if($dayCheckPendingCount > 0){
-            $this->load->library('session');
-            $this->session->unset_userdata('error_message');
-            $variable   =  "error_message";
-            $message    = "* A total of $dayCheckPendingCount users are pending for today’s Day Check check. Pending user list: $dayCheckPendingUsername";
-            $this->session->set_flashdata($variable,$message);
-            redirect('Reports/DayManagementChecking');
-        }
-        // Closed Day Checking Manadatorory
-        // Start Task Checking Manadatorory
-        
-        $pendingTaskCheckData        = $this->CheckTaskCheckPendingByUser();
-        $taskCheckPendingCount       = $pendingTaskCheckData['pending'];
-        $taskCheckPendingUsername    = $pendingTaskCheckData['username'];
-        if($taskCheckPendingCount > 0){
-            $this->load->library('session');
-            $this->session->unset_userdata('error_message');
-            $variable   =  "error_message";
-            $message    = "* A total of $taskCheckPendingCount users are pending for today’s Task check. Pending user list: $taskCheckPendingUsername";
-            $this->session->set_flashdata($variable,$message);
-            redirect('Menu/TeamTaskCheck');
-        }
-            $pendingStatusChangeTaskCheckData        = $this->CheckStatusChangeTaskCheckPendingByUser();
-            $statusChangeTaskCheckPendingCount       = $pendingStatusChangeTaskCheckData['pending'];
-            $tatusChangeTaskCheckPendingUsername    = $pendingStatusChangeTaskCheckData['username'];
-            if($statusChangeTaskCheckPendingCount > 0){
-                $this->load->library('session');
+    if (!empty($user)) {
+        if ($uyid == 15) {
+            // Manager role checks
+            $pendingDayCheckData    = $this->CheckDaysCheckPendingByUser();
+            $dayCheckPendingCount   = $pendingDayCheckData['pending'];
+            $dayCheckPendingUsername = $pendingDayCheckData['username'];
+            if ($dayCheckPendingCount > 0) {
                 $this->session->unset_userdata('error_message');
-                $variable   =  "error_message";
-                $message    = "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Status Task check. Pending user list: $tatusChangeTaskCheckPendingUsername";
-                $this->session->set_flashdata($variable,$message);
+                $this->session->set_flashdata('error_message', "* A total of $dayCheckPendingCount users are pending for today’s Day Check check. Pending user list: $dayCheckPendingUsername");
+                redirect('Reports/DayManagementChecking');
+            }
+
+            $pendingTaskCheckData      = $this->CheckTaskCheckPendingByUser();
+            $taskCheckPendingCount     = $pendingTaskCheckData['pending'];
+            $taskCheckPendingUsername  = $pendingTaskCheckData['username'];
+            if ($taskCheckPendingCount > 0) {
+                $this->session->unset_userdata('error_message');
+                $this->session->set_flashdata('error_message', "* A total of $taskCheckPendingCount users are pending for today’s Task check. Pending user list: $taskCheckPendingUsername");
+                redirect('Menu/TeamTaskCheck');
+            }
+
+            $pendingStatusChangeTaskCheckData     = $this->CheckStatusChangeTaskCheckPendingByUser();
+            $statusChangeTaskCheckPendingCount    = $pendingStatusChangeTaskCheckData['pending'];
+            $statusChangeTaskCheckPendingUsername = $pendingStatusChangeTaskCheckData['username'];
+            if ($statusChangeTaskCheckPendingCount > 0) {
+                $this->session->unset_userdata('error_message');
+                $this->session->set_flashdata('error_message', "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Status Task check. Pending user list: $statusChangeTaskCheckPendingUsername");
                 redirect('Menu/TeamStatusChangeTaskCheck');
             }
-        
-        // Closed Task Checking Manadatorory
-        $this->load->view($dep_name.'/index',['myid'=>$myid,'cmtd'=>$cmtd,'clusterFunnel'=> $clusterFunnel ,'ttdone'=>$ttdone,'upt'=>$upt,'user'=>$user,'fr'=>$fr,'callr'=>$callr,'emailr'=>$emailr,'meetingr'=>$meetingr,'pendingt'=>$pendingt,'totalt'=>$totalt,'patc'=>$patc,'tatc'=>$tatc,'pate'=>$pate,'tate'=>$tate,'patm'=>$patm,'tatm'=>$tatm,'sc'=>$sc,'tptask'=>$tptask,'ttd'=>$ttd,'barg'=>$barg,'uid'=>$uid,'pstc'=>$pstc,'poc'=>$poc,'vpoc'=>$vpoc,'tnos'=>$tnos,'revenue'=>$revenue,'tsww'=>$tsww,'bdc'=>$bdc,'tdate'=>$tdate,'autotasktimenew'=>$autotasktimenew,'mbdc'=>$mbdc,'vm_meetings'=>$vm_meetings]);
-    } else{
-     
-         if($uyid == 13){
-        // Start Status Change Task Checking Manadatorory
-       
-            $pendingStatusChangeTaskCheckData        = $this->CheckStatusChangeTaskCheckPendingByUser();
-            $statusChangeTaskCheckPendingCount       = $pendingStatusChangeTaskCheckData['pending'];
-            $tatusChangeTaskCheckPendingUsername    = $pendingStatusChangeTaskCheckData['username'];
-            if($statusChangeTaskCheckPendingCount > 0){
-                $this->load->library('session');
-                $this->session->unset_userdata('error_message');
-                $variable   =  "error_message";
-                $message    = "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Task Status check. Pending user list: $tatusChangeTaskCheckPendingUsername";
-                $this->session->set_flashdata($variable,$message);
-                // redirect('Menu/TeamStatusChangeTaskCheck');
+
+            // View for manager (uyid = 15)
+            $this->load->view($dep_name . '/index', [
+                'myid'             => $myid,
+                'cmtd'             => $cmtd,
+                'ttdone'           => $ttdone,
+                'upt'              => $upt,
+                'user'             => $user,
+                'fr'               => $fr,
+                'callr'            => $callr,
+                'emailr'           => $emailr,
+                'meetingr'         => $meetingr,
+                'pendingt'         => $pendingt,
+                'totalt'           => $totalt,
+                'patc'             => $patc,
+                'tatc'             => $tatc,
+                'pate'             => $pate,
+                'tate'             => $tate,
+                'patm'             => $patm,
+                'tatm'             => $tatm,
+                'sc'               => $sc,
+                'tptask'           => $tptask,
+                'ttd'              => $ttd,
+                'barg'             => $barg,
+                'uid'              => $uid,
+                'pstc'             => $pstc,
+                'poc'              => $poc,
+                'vpoc'             => $vpoc,
+                'tnos'             => $tnos,
+                'revenue'          => $revenue,
+                'tsww'             => $tsww,
+                'bdc'              => $bdc,
+                'tdate'            => $tdate,
+                'autotasktimenew'  => $autotasktimenew,
+                'mbdc'             => $mbdc,
+                'vm_meetings'      => $vm_meetings
+            ]);
+        } else {
+            // Non-manager roles (e.g., uyid = 13 check)
+            if ($uyid == 13) {
+                $pendingStatusChangeTaskCheckData     = $this->CheckStatusChangeTaskCheckPendingByUser();
+                $statusChangeTaskCheckPendingCount    = $pendingStatusChangeTaskCheckData['pending'];
+                $statusChangeTaskCheckPendingUsername = $pendingStatusChangeTaskCheckData['username'];
+                if ($statusChangeTaskCheckPendingCount > 0) {
+                    $this->session->unset_userdata('error_message');
+                    $this->session->set_flashdata('error_message', "* A total of $statusChangeTaskCheckPendingCount users are pending for today’s Task Status check. Pending user list: $statusChangeTaskCheckPendingUsername");
+                    // redirect kept commented as in original logic
+                    // redirect('Menu/TeamStatusChangeTaskCheck');
+                }
             }
-        // Closed Status Change Task Checking Manadatorory
-         }
-    
-   
-    //    if($uyid != 15){
-    //         $checkReviewStartOrNot = $this->Menu_model->CheckReviewStartOrNot($uid);
-    //         if(sizeof($checkReviewStartOrNot) > 0){
-    //             $checkReviewStartOrNot_review_type = $checkReviewStartOrNot[0]->reviewtype;
-    //             $this->load->library('session');
-    //             $this->session->set_flashdata('pending_message'," * Please Close Your $checkReviewStartOrNot_review_type Review Before Going Your Dashboard Page");
-    //             redirect("Menu/AllReviewPlaing");
-    //         }
-    //     }
-            $this->load->view($dep_name.'/index',['myid'=>$myid,'cmtd'=>$cmtd,'clusterFunnel'=> $clusterFunnel ,'ttdone'=>$ttdone,'upt'=>$upt,'user'=>$user,'fr'=>$fr,'callr'=>$callr,'emailr'=>$emailr,'meetingr'=>$meetingr,'pendingt'=>$pendingt,'totalt'=>$totalt,'patc'=>$patc,'tatc'=>$tatc,'pate'=>$pate,'tate'=>$tate,'patm'=>$patm,'tatm'=>$tatm,'sc'=>$sc,'tptask'=>$tptask,'ttd'=>$ttd,'barg'=>$barg,'uid'=>$uid,'pstc'=>$pstc,'poc'=>$poc,'vpoc'=>$vpoc,'tnos'=>$tnos,'revenue'=>$revenue,'tsww'=>$tsww,'bdc'=>$bdc,'tdate'=>$tdate,'autotasktimenew'=>$autotasktimenew,'mbdc'=>$mbdc,'vm_meetings'=>$vm_meetings]);
-      }  
- }else{
-    redirect('Menu/main');  
+
+            // View for other users
+            $this->load->view($dep_name . '/index', [
+                'myid'             => $myid,
+                'ttdone'           => $ttdone,
+                'user'             => $user,
+                'fr'               => $fr,
+                'callr'            => $callr,
+                'emailr'           => $emailr,
+                'meetingr'         => $meetingr,
+                'pendingt'         => $pendingt,
+                'totalt'           => $totalt,
+                'patc'             => $patc,
+                'tatc'             => $tatc,
+                'pate'             => $pate,
+                'tate'             => $tate,
+                'patm'             => $patm,
+                'tatm'             => $tatm,
+                'sc'               => $sc,
+                'tptask'           => $tptask,
+                'ttd'              => $ttd,
+                'barg'             => $barg,
+                'uid'              => $uid,
+                'pstc'             => $pstc,
+                'poc'              => $poc,
+                'vpoc'             => $vpoc,
+                'tnos'             => $tnos,
+                'revenue'          => $revenue,
+                'tsww'             => $tsww,
+                'bdc'              => $bdc,
+                'tdate'            => $tdate,
+                'autotasktimenew'  => $autotasktimenew,
+                'mbdc'             => $mbdc,
+                'vm_meetings'      => $vm_meetings
+            ]);
+        }
+    } else {
+        redirect('Menu/main');
+    }
 }
-    
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 public function Dashboard3(){
     date_default_timezone_set("Asia/Calcutta");
     if(isset($_POST['tdate'])){
@@ -7408,6 +8011,7 @@ else
     }
     public function Notification(){
         $user = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
         $data['user'] = $user;
         $uid = $user['user_id'];
         $uyid =  $user['type_id'];
@@ -7612,28 +8216,52 @@ else
         $this->load->model('Menu_model');
         $mdata = $this->Menu_model->Pro_Apr($aprid,$adid,$apr,$remark);
     }
+
+
+
     public function handApr($aprid){
 
-        $admid = $this->input->post('admid');
+        $user               = $this->session->userdata('user');
+        $admid              = $user['user_id'];
+        $uyid               = $user['type_id'];
+
+        if(empty($user)){ redirect('Menu/main');}
+
         $this->load->model('Menu_model');
         $this->load->library('session');
 
         $handoverDatas = $this->Menu_model->get_clientbyid($aprid);
+
         if(sizeof($handoverDatas) > 0){
             $pro_uid = $handoverDatas[0]->pro_uid;
             if(empty($pro_uid) || is_null($pro_uid)){
+                 unset($_SESSION['success_message']);
+
                 $this->session->set_flashdata('error_message'," * First Mapped PRO On this Handover. ");
                 redirect('Menu/handoverapr');
             }
         }else{
+            unset($_SESSION['success_message']);
             $this->session->set_flashdata('error_message'," * Handover Details Not Found ! ");
             redirect('Menu/handoverapr');
         }
 
         $mdata = $this->Menu_model->hand_Apr($aprid,$admid);
-        redirect('Menu/handoverapr');
 
+        echo $mdata;
+        die;
+      
+        if($mdata){
+            $this->session->set_flashdata('success_message'," * Handover Approved Successfully ! ");
+            redirect('Menu/handoverapr');
+        }else{
+             redirect('Menu/handoverapr');
+        }
+        
     }
+
+
+
     public function handDelete($aprid){
         $this->load->model('Menu_model');
         $mdata = $this->Menu_model->hand_Delete($aprid);
@@ -10147,7 +10775,63 @@ public function demo_testpage(){
             redirect('Menu/main');
         }
     }
+
+
+
+
+
+
+
     public function DayManagement(){
+        date_default_timezone_set("Asia/Calcutta");
+        $tdate        = date('Y-m-d');
+        $user         = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        $data['user'] = $user;
+        $uid          = $user['user_id'];
+        $uyid         =  $user['type_id'];
+        $this->load->model('Menu_model');
+        $dt           = $this->Menu_model->get_utype($uyid);
+        $dep_name     = $dt[0]->name;
+        $mdata        = $this->Menu_model->get_daydetail($uid,$tdate);
+        $yesterday    = date('Y-m-d', strtotime('-1 day', strtotime($tdate)));
+        $yestdata     = $this->Menu_model->get_Yestdaydetail($uid,$yesterday);
+    $getRejectedMoM = $this->Menu_model->getRejectedMoM($uid,date('Y-m-d'));
+        if($mdata)
+        {
+         $st = $mdata[0]->ustart;
+         $ct = $mdata[0]->uclose;
+            if($st!=''){$do=1;}
+            if($ct!=''){$do=2;}
+        }else{$do=0;}
+
+
+
+        $currentDate  = date("Y-m-d");
+        // $tomorrowDate = date("Y-m-d", strtotime($currentDate . ' +1 day'));
+        // $tomorrowDate = $this->checkPlannerDate($tomorrowDate);
+
+        //  $tomorrowDate      =  $this->Menu_model->findSpecialDate($currentDate);
+        $tomorrowDate  = $this->Menu_model->findNextSpecialDate(date("Y-m-d"));
+
+        $query             =  $this->db->query("SELECT * FROM `autotask_time` WHERE user_id = '$uid' and date > '$currentDate'");
+        // $query             =  $this->db->query("SELECT * FROM `autotask_time` WHERE user_id =$uid and date ='$tomorrowDate'");
+        $gettoAutoTaskTime = $query->result();
+        $query1            =  $this->db->query("SELECT * FROM `autotask_time` WHERE user_id =$uid and date='$currentDate'");
+        $gecurAutoTaskTime = $query1->result();
+        
+        $getShiftStartData = $this->Menu_model->getShiftStartData($uid,$tdate);
+        if(!empty($user)){
+            $this->load->view($dep_name.'/DayManagement',['uid'=>$uid,'user'=>$user,'mdata'=>$mdata,'tdate'=>$tdate,'uid'=>$uid,'do'=>$do,'yestdata'=>$yestdata,'gettoAutoTaskTime'=>$gettoAutoTaskTime,'uyid'=>$uyid,'gecurAutoTaskTime'=>$gecurAutoTaskTime,'getShiftStartData'=>$getShiftStartData,'daycheck'=>'start','getRejectedMoM'=>$getRejectedMoM]);
+        }else{
+            redirect('Menu/main');
+        }
+    }
+
+
+
+
+    public function DayManagementTest(){
         date_default_timezone_set("Asia/Calcutta");
         $tdate        = date('Y-m-d');
         $user         = $this->session->userdata('user');
@@ -10184,11 +10868,19 @@ public function demo_testpage(){
         
         $getShiftStartData = $this->Menu_model->getShiftStartData($uid,$tdate);
         if(!empty($user)){
-            $this->load->view($dep_name.'/DayManagement',['uid'=>$uid,'user'=>$user,'mdata'=>$mdata,'tdate'=>$tdate,'uid'=>$uid,'do'=>$do,'yestdata'=>$yestdata,'gettoAutoTaskTime'=>$gettoAutoTaskTime,'uyid'=>$uyid,'gecurAutoTaskTime'=>$gecurAutoTaskTime,'getShiftStartData'=>$getShiftStartData,'daycheck'=>'start','getRejectedMoM'=>$getRejectedMoM]);
+            $this->load->view($dep_name.'/DayManagementTest',['uid'=>$uid,'user'=>$user,'mdata'=>$mdata,'tdate'=>$tdate,'uid'=>$uid,'do'=>$do,'yestdata'=>$yestdata,'gettoAutoTaskTime'=>$gettoAutoTaskTime,'uyid'=>$uyid,'gecurAutoTaskTime'=>$gecurAutoTaskTime,'getShiftStartData'=>$getShiftStartData,'daycheck'=>'start','getRejectedMoM'=>$getRejectedMoM]);
         }else{
             redirect('Menu/main');
         }
     }
+
+
+
+
+
+
+
+
     public function DayStartCheck(){
         date_default_timezone_set("Asia/Calcutta");
         $tdate=date('Y-m-d');
@@ -11906,12 +12598,14 @@ public function demo_testpage(){
     }
     public function artworkapr(){
         $user = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent C
         $data['user'] = $user;
         $uid = $user['user_id'];
         $uyid =  $user['type_id'];
         $this->load->model('Menu_model');
         $dt=$this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 //echo $uid;
         $client=$this->Menu_model->get_handover($uid);
         if(!empty($user)){
@@ -12644,22 +13338,61 @@ public function demo_testpage(){
         $this->Menu_model->edit_cmp($cid,$state,$city,$address,$website,$top_spender,$upsell_client,$focus_funnel);
         redirect('Menu/bdcompanies/'.$codeid.'/'.$bdid);
     }
-    public function handoverapr(){
+    // public function handoverapr(){
+    //     $user = $this->session->userdata('user');
+    //     $data['user'] = $user;
+    //     $uid = $user['user_id'];
+    //     $uyid =  $user['type_id'];
+    //     $this->load->model('Menu_model');
+    //     $dt=$this->Menu_model->get_utype($uyid);
+    //     $dep_name = $dt[0]->name;
+    //     $client=$this->Menu_model->get_handoverforapr();
+    //     $bdid=$this->Menu_model->get_userbyaid($uid);
+    //     if(!empty($user)){
+    //         $this->load->view($dep_name.'/handoverapr',['user'=>$user,'client'=>$client,'uid'=>$uid,'bdid'=>$bdid]);
+    //     }else{
+    //         redirect('Menu/main');
+    //     }
+    // }
+
+
+    public function handoverapr()
+    {
         $user = $this->session->userdata('user');
-        $data['user'] = $user;
-        $uid = $user['user_id'];
-        $uyid =  $user['type_id'];
-        $this->load->model('Menu_model');
-        $dt=$this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
-        $client=$this->Menu_model->get_handoverforapr();
-        $bdid=$this->Menu_model->get_userbyaid($uid);
-        if(!empty($user)){
-            $this->load->view($dep_name.'/handoverapr',['user'=>$user,'client'=>$client,'uid'=>$uid,'bdid'=>$bdid]);
-        }else{
+
+        // User not logged in
+        if (empty($user)) {
             redirect('Menu/main');
         }
+
+        $data['user'] = $user;
+
+        $uid  = $user['user_id'];
+        $uyid = $user['type_id'];
+
+        $this->load->model('Menu_model');
+
+        // Get user type details
+        $dt = $this->Menu_model->get_utype($uyid);
+
+        $dep_name = !empty($dt) ? $dt[0]->name : '';
+
+        // Get client and BD details
+        $client = $this->Menu_model->get_handoverforapr();
+        $bdid   = $this->Menu_model->get_userbyaid($uid);
+
+        // Load view
+        $this->load->view(
+            $dep_name . '/handoverapr',
+            [
+                'user'   => $user,
+                'client' => $client,
+                'uid'    => $uid,
+                'bdid'   => $bdid
+            ]
+        );
     }
+
     public function bdcompanies($code,$bdid){
         $user = $this->session->userdata('user');
         $data['user'] = $user;
@@ -12944,26 +13677,70 @@ public function demo_testpage(){
         $this->Menu_model->get_cpst($fopst,$topst,$cid);
         redirect('Menu/changepst');
     }
-    public function cbdtf(){
-        $topst                  = $_POST['topst'];
-        $cid                    = $_POST['cid'];
-        $fopst                  = $_POST['fopst'];
-        $this_financial_year    = $_POST['this_financial_year'];
-        $select_cluster         = $_POST['select_cluster'];
-        $this->load->model('Menu_model');
-        $this_financial_year    = array_values(array_filter($this_financial_year));
-        $select_cluster         = array_values(array_filter($select_cluster));
-        if(sizeof($select_cluster) == 0){
-            $this->load->library('session');
-            $this->session->set_flashdata('error_message', "❗Travel Cluster field is required");
-            redirect('Menu/BDTOBDCTF');
-        }
-        // dd($_POST);
-        
-        $this->Menu_model->get_cbdtf($fopst,$topst,$cid,$this_financial_year,$select_cluster);
-        // redirect('Menu/PMTFTOBD');
+    // public function cbdtf(){
+    //     $topst                  = $_POST['topst'];
+    //     $cid                    = $_POST['cid'];
+    //     $fopst                  = $_POST['fopst'];
+    //     $this_financial_year    = $_POST['this_financial_year'];
+    //     $select_cluster         = $_POST['select_cluster'];
+    //     $this->load->model('Menu_model');
+    //     $this_financial_year    = array_values(array_filter($this_financial_year));
+    //     $select_cluster         = array_values(array_filter($select_cluster));
+    //     if(sizeof($select_cluster) == 0){
+    //         $this->load->library('session');
+    //         $this->session->set_flashdata('error_message', "❗Travel Cluster field is required");
+    //         redirect('Menu/BDTOBDCTF');
+    //     }
+
+    //     $this->Menu_model->get_cbdtf($fopst,$topst,$cid,$this_financial_year,$select_cluster);
+    //     // redirect('Menu/PMTFTOBD');
+    //     redirect('Menu/BDTOBDCTF');
+    // }
+
+
+    public function cbdtf()
+{
+    $topst               = $_POST['topst'] ?? '';
+    $cid                 = $_POST['cid'] ?? '';
+    $fopst               = $_POST['fopst'] ?? '';
+
+    // Always force array
+    $this_financial_year = $_POST['this_financial_year'] ?? [];
+    $select_cluster      = $_POST['select_cluster'] ?? [];
+
+    $this->load->model('Menu_model');
+
+    // Convert to array if single value comes
+    $this_financial_year = is_array($this_financial_year) ? $this_financial_year : [$this_financial_year];
+    $select_cluster      = is_array($select_cluster) ? $select_cluster : [$select_cluster];
+
+    // Remove empty values
+    $this_financial_year = array_values(array_filter($this_financial_year));
+    $select_cluster      = array_values(array_filter($select_cluster));
+
+    if (sizeof($select_cluster) == 0) {
+
+        $this->load->library('session');
+
+        $this->session->set_flashdata(
+            'error_message',
+            "❗Travel Cluster field is required"
+        );
+
         redirect('Menu/BDTOBDCTF');
     }
+
+    $this->Menu_model->get_cbdtf(
+        $fopst,
+        $topst,
+        $cid,
+        $this_financial_year,
+        $select_cluster
+    );
+
+    redirect('Menu/BDTOBDCTF');
+}
+
     public function rpmeetreport(){
         if(isset($_POST['sdate']) && isset($_POST['edate'])){
         $sdate = $_POST['sdate'];
@@ -13895,7 +14672,7 @@ public function demo_testpage(){
                 $clids .= $d->cluster_id.',';
             }
         }
-        $clids = rtrim($clids , ',');
+        $clids = rtrim($clids, ',');
       
         $query3 = $this->db->query("SELECT cluster.*, cluster_mapping.travel_type
         FROM `cluster` 
@@ -14245,7 +15022,7 @@ public function demo_testpage(){
             }
         }else{
             $da = '';
-            $inid = rtrim($inid , ',');
+            $inid = rtrim($inid, ',');
     
         
             $remark=$this->Menu_model->get_purposebyinidnew($aid,$inid);
@@ -15453,6 +16230,10 @@ echo '</div> <hr>';
        $momcheck_query      = $this->db->query("SELECT * FROM `tblcallevents` WHERE aftertask = '$tid' AND actiontype_id = 6");
        $momDatas            =  $momcheck_query->result();
 
+    //    if($uid == 100194){
+    //     dd($momDatas);
+    //    }
+
        if(sizeof($momDatas) == 0){
              if(isset($_POST['new_compconname'])){
             $new_compconname        = $this->input->post('new_compconname');
@@ -15465,10 +16246,10 @@ echo '</div> <hr>';
             $new_compconnamecnt = sizeof($new_compconname);
             if($new_compconnamecnt > 0){
                 for($i=0;$i<$new_compconnamecnt;$i++){
-                    $new_compconname[$i]    = trim($new_compconname[$i]);
-                    $new_designation[$i]    = trim($new_designation[$i]);
-                    $new_emailid[$i]        = trim($new_emailid[$i]);
-                    $new_phoneno[$i]        = trim($new_phoneno[$i]);
+                    $new_compconname[$i]    = trim($new_compconname[$i] ?? '');
+                    $new_designation[$i]    = trim($new_designation[$i] ?? '');
+                    $new_emailid[$i]        = trim($new_emailid[$i] ?? '');
+                    $new_phoneno[$i]        = trim($new_phoneno[$i] ?? '');
                     $new_contact_type[$i]   = $new_contact_type[$i];
                     $new_linked_in[$i]      = $new_linked_in[$i];
                     if($new_compconname[$i] !=='' && $new_designation[$i] !=='' && $new_phoneno[$i] !==''){
@@ -15586,10 +16367,10 @@ echo '</div> <hr>';
             $new_compconnamecnt = sizeof($new_compconname);
             if($new_compconnamecnt > 0){
                 for($i=0;$i<$new_compconnamecnt;$i++){
-                    $new_compconname[$i]    = trim($new_compconname[$i]);
-                    $new_designation[$i]    = trim($new_designation[$i]);
-                    $new_emailid[$i]        = trim($new_emailid[$i]);
-                    $new_phoneno[$i]        = trim($new_phoneno[$i]);
+                    $new_compconname[$i]    = trim($new_compconname[$i] ?? '');
+                    $new_designation[$i]    = trim($new_designation[$i] ?? '');
+                    $new_emailid[$i]        = trim($new_emailid[$i] ?? '');
+                    $new_phoneno[$i]        = trim($new_phoneno[$i] ?? '');
                     $new_contact_type[$i]   = $new_contact_type[$i];
                     if($new_compconname[$i] !=='' && $new_designation[$i] !=='' && $new_phoneno[$i] !==''){
                         $newContactData = array(
@@ -19290,7 +20071,7 @@ public function addplantask12(){
      }
   
      $totalttaskdata =$this->Menu_model->get_totaltdetailsDatewise($bdid,$pdate);
-     $cosumeTime = '';
+     $cosumeTime = 0;
  
      $getplandateindata     =  $this->db->query("SELECT * FROM `autotask_time` where user_id='$uid' AND date ='$pdate'");
      $getplandateindata     =  $getplandateindata->result();
@@ -19298,7 +20079,9 @@ public function addplantask12(){
      if(sizeof($totalttaskdata) > 0){
         foreach($totalttaskdata as $task){
             $action     = $this->Menu_model->get_actionbyid($task->actiontype_id);
-            $cosumeTime +=$action[0]->yest;
+            if (!empty($action) && isset($action[0]->yest)) {
+                $cosumeTime += (int) $action[0]->yest;
+            }
         }
        
         $stime = $getplandateindata[0]->stime;
@@ -19779,7 +20562,7 @@ public function selfAssign($tableId, $selfAssign, $taskdate){
         $aid= $this->input->post('aId');
         $this->load->model('Menu_model');
         $da = '';
-        $inid = rtrim($inid , ',');
+        $inid = rtrim($inid, ',');
         $remark=$this->Menu_model->get_purposebyinidnew($aid,$inid);
         echo json_encode($remark);
     }
@@ -20627,12 +21410,14 @@ public function SpecialRequestForLeave(){
 }
 public function SpecialRequestForLeaveSomeTime(){
     $user = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 by parallel-fix agent C
     $data['user'] = $user;
     $uid = $user['user_id'];
     $uyid =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt=$this->Menu_model->get_utype($uyid);
-    $dep_name = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $this->load->view($dep_name.'/SpecialRequestForLeaveSomeTime',['user'=>$user,'uid'=>$uid]);
 }
 public function GetCheckExistsTaskTime(){
@@ -22031,7 +22816,7 @@ public function getJoinMeetpurposebyinid(){
     $aid= $this->input->post('aid');
     $this->load->model('Menu_model');
     $da = '';
-    $inid = rtrim($inid , ',');
+    $inid = rtrim($inid, ',');
    
     $remark=$this->Menu_model->get_purposebyinidnew($aid,$inid);
     
@@ -22329,10 +23114,11 @@ public function nostatuschange_indate(){
     $uid= $this->input->post('uid');
  $adate = $this->input->post('adate');
     $this->load->model('Menu_model');
+
     if($sid == 4 || $sid == 5){
         if($uyid == 3){
             $days = 15;
-        }elseif($uyid == 13 || $uyid == 4){
+        }else if($uyid ==13 || $uyid ==4 || $uyid ==19 || $uyid ==21 || $uyid ==22 || $uyid ==23 || $uyid ==24){
             $days = 30;
         }else{
             $days = 8;
@@ -23932,60 +24718,148 @@ public function check_notifications() {
         echo json_encode($notifications);
     }
 // ---------------------profile page start----------------------
-public function myProfile(){
+// public function myProfile(){
     
-        $user = $this->session->userdata('user');
-        $data['user'] = $user;
-        $uid = $user['user_id'];
-        //echo $uid;
-        $uyid =  $user['type_id'];
-        $this->load->model('Menu_model');
-        $dt=$this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
-        //echo $dep_name;
-        $tdate=date('Y-m-d');
-        $data = $this->Menu_model->get_userInfo($uid);
-        //dd($data);
-        $lvBalance = $data[0]->leave_balance;
-        $lvArr=json_decode($lvBalance,true);
-        $lvValues = array_filter($lvArr);
-        //echo"lvValues";dd($lvValues);
-        if(isset($lvValues) && !empty($lvValues)){
-            //echo"here";exit;
-            //$lvArr=json_decode($lvBalance,true);
-            //dd($lvArr);
-            $filtered_array = array_filter($lvArr, function($value) {
-                return $value != 0;
-            });
-            //dd($filtered_array);
-            $keys = array_keys($filtered_array);
-            $values = array_values($filtered_array);
-            //dd($keys);
-            $lvTypes = $this->Menu_model->getLeaveTypes($uid,$keys);
+//         $user = $this->session->userdata('user');
+//         $data['user'] = $user;
+//         $uid = $user['user_id'];
+//         //echo $uid;
+//         $uyid =  $user['type_id'];
+//         $this->load->model('Menu_model');
+//         $dt=$this->Menu_model->get_utype($uyid);
+//         $dep_name = $dt[0]->name;
+//         //echo $dep_name;
+//         $tdate=date('Y-m-d');
+//         $data = $this->Menu_model->get_userInfo($uid);
+//         //dd($data);
+//         $lvBalance = $data[0]->leave_balance;
+//         $lvArr=json_decode($lvBalance,true);
+//         $lvValues = array_filter($lvArr);
+//         //echo"lvValues";dd($lvValues);
+//         if(isset($lvValues) && !empty($lvValues)){
+//             //echo"here";exit;
+//             //$lvArr=json_decode($lvBalance,true);
+//             //dd($lvArr);
+//             $filtered_array = array_filter($lvArr, function($value) {
+//                 return $value != 0;
+//             });
+//             //dd($filtered_array);
+//             $keys = array_keys($filtered_array);
+//             $values = array_values($filtered_array);
+//             //dd($keys);
+//             $lvTypes = $this->Menu_model->getLeaveTypes($uid,$keys);
+//             foreach ($lvTypes as $index => &$leave) {
+//                 if (isset($values[$index])) {
+//                     // If $lvTypes is an associative array or object, you can set a new property or key
+//                     $leave->balance = $values[$index]; // Assuming $lvTypes elements are objects
+//                     // OR if it's an associative array:
+//                     // $leave['balance'] = $values[$index]; 
+//                 }
+//             }
+//         }else{
+//             $lvTypes=null;
+//         }
+//         // $count=$this->Menu_model->get_bdpstOrClusterTeams($uid);
+//         // dd($count);
+//         $dayData = $this->Menu_model->get_daydetail($uid,$tdate);
+//         // dd($dayData);
+//         $taskData = $this->Menu_model->taskStatus($uid,$tdate);
+//         $lvData = $this->Menu_model->get_leave_detail_by_uid($uid);
+//         //dd($lvData);
+//         if(!empty($user)){
+//             $this->load->view('Functions/myProfile',['uid'=>$uid,'user'=>$user,'dep_name'=>$dep_name,'data'=>$data,'dep_name'=>$dep_name,'dayData'=>$dayData, 'taskData'=>$taskData, 'lvData'=>$lvData, 'lvTypes'=>$lvTypes,'lvTypes'=>$lvTypes]);
+//         }else{
+//             redirect('Menu/main');
+//         }
+//     }
+
+
+
+
+public function myProfile()
+{
+    $user = $this->session->userdata('user');
+
+    if (empty($user)) {
+        redirect('Menu/main');
+        return;
+    }
+
+    $uid  = $user['user_id'] ?? 0;
+    $uyid = $user['type_id'] ?? 0;
+
+    $this->load->model('Menu_model');
+
+    // Department Details
+    $dt = $this->Menu_model->get_utype($uyid);
+    $dep_name = !empty($dt) && isset($dt[0]->name) ? $dt[0]->name : '';
+
+    $tdate = date('Y-m-d');
+
+    // User Info
+    $userInfo = $this->Menu_model->get_userInfo($uid);
+
+    if (empty($userInfo)) {
+        show_error('User information not found.');
+        return;
+    }
+
+    $leave_balance = $userInfo[0]->leave_balance ?? '';
+
+    // Decode Leave Balance
+    $lvArr = json_decode($leave_balance, true);
+
+    if (!is_array($lvArr)) {
+        $lvArr = [];
+    }
+
+    $lvValues = array_filter($lvArr);
+
+    $lvTypes = null;
+
+    if (!empty($lvValues)) {
+
+        $filtered_array = array_filter($lvArr, function ($value) {
+            return (float)$value != 0;
+        });
+
+        $keys   = array_keys($filtered_array);
+        $values = array_values($filtered_array);
+
+        $lvTypes = $this->Menu_model->getLeaveTypes($uid, $keys);
+
+        if (!empty($lvTypes)) {
             foreach ($lvTypes as $index => &$leave) {
+
                 if (isset($values[$index])) {
-                    // If $lvTypes is an associative array or object, you can set a new property or key
-                    $leave->balance = $values[$index]; // Assuming $lvTypes elements are objects
-                    // OR if it's an associative array:
-                    // $leave['balance'] = $values[$index]; 
+                    $leave->balance = $values[$index];
+                } else {
+                    $leave->balance = 0;
                 }
             }
-        }else{
-            $lvTypes=null;
-        }
-        // $count=$this->Menu_model->get_bdpstOrClusterTeams($uid);
-        // dd($count);
-        $dayData = $this->Menu_model->get_daydetail($uid,$tdate);
-        // dd($dayData);
-        $taskData = $this->Menu_model->taskStatus($uid,$tdate);
-        $lvData = $this->Menu_model->get_leave_detail_by_uid($uid);
-        //dd($lvData);
-        if(!empty($user)){
-            $this->load->view('Functions/myProfile',['uid'=>$uid,'user'=>$user,'dep_name'=>$dep_name,'data'=>$data,'dep_name'=>$dep_name,'dayData'=>$dayData, 'taskData'=>$taskData, 'lvData'=>$lvData, 'lvTypes'=>$lvTypes,'lvTypes'=>$lvTypes]);
-        }else{
-            redirect('Menu/main');
         }
     }
+
+    // Other Data
+    $dayData  = $this->Menu_model->get_daydetail($uid, $tdate);
+    $taskData = $this->Menu_model->taskStatus($uid, $tdate);
+    $lvData   = $this->Menu_model->get_leave_detail_by_uid($uid);
+
+    // Load View
+    $this->load->view('Functions/myProfile', [
+        'uid'       => $uid,
+        'user'      => $user,
+        'dep_name'  => $dep_name,
+        'data'      => $userInfo,
+        'dayData'   => $dayData,
+        'taskData'  => $taskData,
+        'lvData'    => $lvData,
+        'lvTypes'   => $lvTypes
+    ]);
+}
+
+
+
 public function getCMandPST() {
     $inid = $this->input->post('inid');
     $this->load->model('Menu_model');
@@ -25214,7 +26088,7 @@ public function GetDistricONHandoverPage(){
 
 }
 public function GetCityONHandoverPage(){
-    $sdistrictid = trim($this->input->post('sdistrictid'));
+    $sdistrictid = trim($this->input->post('sdistrictid') ?? '');
     $this->load->model('Menu_model');
 
     $dquery = $this->db->query("SELECT * FROM `in_city` WHERE districtid = '$sdistrictid'");
@@ -25610,7 +26484,6 @@ public function bdHandover_New(){
                 ];
                 $db3->where('id', $rsid);
                 $db3->update('spd_request', $mappedSPDRequestSchool);
-
             }
 
         }
@@ -25633,16 +26506,15 @@ public function bdHandover_New(){
 
         if($id){
 
-            $query         = $this->db->query("SELECT * FROM `init_call` WHERE `cmpid_id` = '$company_id'");
-            $cmp_initData  =  $query->result();
-            $init_Data     =  $cmp_initData[0];
-            $init_id       =  $init_Data->id;
-            $cmp_cstatus   =  $init_Data->cstatus;
+            $query              = $this->db->query("SELECT * FROM `init_call` WHERE `cmpid_id` = '$company_id'");
+            $cmp_initData       = $query->result();
+            $init_Data          = $cmp_initData[0];
+            $init_id            = $init_Data->id;
+            $cmp_cstatus        = $init_Data->cstatus;
+            $new_datetime       = date("Y-m-d H:i:s");
+            $bdr_r_remarks      = "Auto Assign BD Request Task After Handover Submition";
+            $bdr_rew_remarks    = "Create BD Request";
 
-            $new_datetime   = date("Y-m-d H:i:s");
-        
-            $bdr_r_remarks = "Auto Assign BD Request Task After Handover Submition";
-            $bdr_rew_remarks = "Create BD Request";
             $data1 = [
                 'lastCFID'              => 0,
                 'nextCFID'              => 0,
@@ -26961,6 +27833,13 @@ public function AddTarget($reviewID = NULL){
     $tptime         =   $this->Menu_model->get_tptime($uid);
     $tptime         =   $tptime[0]->tptime;
     $dep_name       =   $dt[0]->name;
+
+    $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
+    $sdate                  = $curFinancialDate['start_date'];
+    $edate                  = $curFinancialDate['end_date'];
+    $max_check_date         = $sdate;
+
+
     if(is_null($reviewID) || $reviewID == ''){
         $this->load->library('session');
         $this->session->set_flashdata('error_message', '* Target Setting Only For After Review Complete.');
@@ -26995,7 +27874,14 @@ public function AddTarget($reviewID = NULL){
     // }else{
     //     $this->load->view($dep_name.'/AddTarget',['uid'=>$uid,'user'=>$user,'targetData'=>$targetData,'reviewData'=>$reviewData]);
     // }
-    $this->load->view('Functions/AddTarget',['uid'=>$uid,'user'=>$user,'targetData'=>$targetData,'reviewData'=>$reviewData,'dep_name'=>$dep_name]);
+    $this->load->view('Functions/AddTarget',[
+    'uid'               =>  $uid,
+    'user'              =>  $user,
+    'targetData'        =>  $targetData,
+    'reviewData'        =>  $reviewData,
+    'dep_name'          =>  $dep_name,
+    'max_check_date'    =>  $max_check_date
+    ]);
 }
 public function AddTargetListByUser(){
     
@@ -27579,7 +28465,7 @@ public function rpminitiate(){
        
     $getCurrentMeetingsDatas = $this->Menu_model->CheckVMMeetinfoByid($smid);
         if(sizeof($getCurrentMeetingsDatas) > 0){
-            $meeting_link = trim($this->input->post('meeting_link'));
+            $meeting_link = trim($this->input->post('meeting_link') ?? '');
                 if($meeting_link == ''){
                     $this->session->set_flashdata('error_message'," * Please add a virtual meeting link to initiate the meeting.");
                     redirect('Menu/Dashboard');
@@ -29161,14 +30047,15 @@ public function AddCashSpentInMeetings(){
             }
             $bills = json_encode($filename);
             $this->Menu_model->Addexpensecash($uid,$meet,$expense,$bills,$expense_remark,$expense_string);
+            $this->session->set_flashdata('success_message','Meeting Cash Expense added successfully!');
         } else {
-            $this->session->set_flashdata('msg', 'Failed to upload images: ' . implode(', ', $errors));
+            $this->session->set_flashdata('error_message', 'Failed to upload images: ' . implode(', ', $errors));
         }
 
         $i++;$k++;
     }
 
-    $this->session->set_flashdata('success_message','Meeting Cash Expense added successfully!');
+    
     redirect("Menu/UpdateTodaysMeetingsDetails");
 }
 
@@ -29181,6 +30068,7 @@ public function AddCashSpentInMeetings(){
 public function CashExpenseReport(){
    
     $user               = $this->session->userdata('user');
+    if(empty($user)){redirect('Menu/main');}
     $data['user']       = $user;
     $uid                = $user['user_id'];
     $uyid               =  $user['type_id'];
@@ -29188,12 +30076,27 @@ public function CashExpenseReport(){
     $dt                 = $this->Menu_model->get_utype($uyid);
     $dep_name           = $dt[0]->name;
     $cashexpenseData    = $this->Menu_model->GetTeamCashExpense($uid);
-    if(!empty($user)){
-        $this->load->view($dep_name.'/CashExpenseReport',['uid'=>$uid,'user'=>$user,'cashexpenseData'=>$cashexpenseData]);
-    }else{
-        redirect('Menu/main');
-    }
+   
+    // $this->load->view($dep_name.'/CashExpenseReport',['uid'=>$uid,'user'=>$user,'cashexpenseData'=>$cashexpenseData]);
+
+    $this->load->view('Functions/CashExpenseReport', 
+    [
+        'user'                  => $user,
+        'uid'                   => $uid,
+        'uData'                 => $uData,
+        'cashexpenseData'       => $cashexpenseData,
+        'dep_name'              => $dep_name
+    ]
+    ); 
+    
 }
+
+
+
+
+
+
+
 public function CashExpenseReject(){
     $user           = $this->session->userdata('user');
     $data['user']   = $user;
@@ -29791,7 +30694,7 @@ public function getClusterNameByiniid(){
     $inid= $this->input->post('inid');
     $this->load->model('Menu_model');
     $da = '';
-    $inid = rtrim($inid , ',');
+    $inid = rtrim($inid, ',');
    
     $clusterdata=$this->Menu_model->get_clusterbyinidnew($inid);
    if(!empty($clusterdata)){
@@ -31468,7 +32371,7 @@ public function StoreUserOnDatabase(){
             $userpsts        = rtrim($userpsts, ",");
             $sc_user_id      = $authUserId;
             $updates_user_id = $selectbds.','.$clustermanagers.','.$userpsts;
-            $updates_user_id        = rtrim($updates_user_id, ",");
+            $updates_user_id = rtrim($updates_user_id, ",");
       
         $query =  $this->db->query("UPDATE `user_details` SET `sales_co`='$sc_user_id' WHERE user_id IN ($updates_user_id)");
         // $query =  $this->db->query("UPDATE `user_details` SET `aadmin`='$sc_user_id' WHERE user_id = '$authUserId'");
@@ -31502,15 +32405,15 @@ public function StoreUserOnDatabase(){
     }else if($type_id == 2){
        
         $selectbds          = implode(',', $selectbd);
-        $selectbds          = rtrim($selectbds, ",");
+        $selectbds          = rtrim($selectbds ?? '', ",");
         $clustermanagers    = implode(',', $clustermanager);
-        $clustermanagers    = rtrim($clustermanagers, ",");
+        $clustermanagers    = rtrim($clustermanagers ?? '', ",");
         $userpsts           = implode(',', $userpst);
-        $userpsts           = rtrim($userpsts, ",");
+        $userpsts           = rtrim($userpsts ?? '', ",");
         $sales_coordinators = implode(',', $sales_coordinator);
-        $sales_coordinators = rtrim($sales_coordinators, ",");
+        $sales_coordinators = rtrim($sales_coordinators ?? '', ",");
         $updates_user_id    = $selectbds.','.$clustermanagers.','.$userpsts.','.$sales_coordinators;
-        $updates_user_id    = rtrim($updates_user_id, ",");
+        $updates_user_id    = rtrim($updates_user_id ?? '', ",");
       
         $query =  $this->db->query("UPDATE `user_details` SET `admin_id`='$authUserId' WHERE user_id IN ($updates_user_id)");
         $assistant_sales_head_user_ids          = implode(',', $assistant_sales_head);
@@ -31530,15 +32433,15 @@ public function StoreUserOnDatabase(){
     else if($type_id == 17){
        
         $selectbds          = implode(',', $selectbd);
-        $selectbds          = rtrim($selectbds, ",");
+        $selectbds          = rtrim($selectbds ?? '', ",");
         $clustermanagers    = implode(',', $clustermanager);
-        $clustermanagers    = rtrim($clustermanagers, ",");
+        $clustermanagers    = rtrim($clustermanagers ?? '', ",");
         $userpsts           = implode(',', $userpst);
-        $userpsts           = rtrim($userpsts, ",");
+        $userpsts           = rtrim($userpsts ?? '', ",");
         $sales_coordinators = implode(',', $sales_coordinator);
-        $sales_coordinators = rtrim($sales_coordinators, ",");
+        $sales_coordinators = rtrim($sales_coordinators ?? '', ",");
         $updates_user_id    = $selectbds.','.$clustermanagers.','.$userpsts.','.$sales_coordinators;
-        $updates_user_id    = rtrim($updates_user_id, ",");
+        $updates_user_id    = rtrim($updates_user_id ?? '', ",");
         // Combine the non-empty values
         // $updates_user_id = trim($selectbds . ',' . $clustermanagers . ',' . $userpsts . ',' . $sales_coordinators, ',');
         // If $updates_user_id is empty, set it to null or an empty value
@@ -31567,12 +32470,12 @@ public function StoreUserOnDatabase(){
         $clustermanagers    = !empty($clustermanager) ? implode(',', $clustermanager) : '';
         $userpsts           = !empty($userpst) ? implode(',', $userpst) : '';
         $sales_coordinators = !empty($sales_coordinator) ? implode(',', $sales_coordinator) : '';
-        $selectbds          = rtrim($selectbds, ",");
-        $clustermanagers    = rtrim($clustermanagers, ",");
-        $userpsts           = rtrim($userpsts, ",");
+        $selectbds          = rtrim($selectbds ?? '', ",");
+        $clustermanagers    = rtrim($clustermanagers ?? '', ",");
+        $userpsts           = rtrim($userpsts ?? '', ",");
         $sales_coordinators = rtrim($sales_coordinators, ",");
         $updates_user_id    = $selectbds.','.$clustermanagers.','.$userpsts.','.$sales_coordinators;
-        $updates_user_id    = rtrim($updates_user_id, ",");
+        $updates_user_id    = rtrim($updates_user_id ?? '', ",");
         // If $updates_user_id is empty, set it to null or an empty value
         if (empty($updates_user_id)) {
             $updates_user_id = ''; // Or null, depending on your requirement
@@ -31595,12 +32498,12 @@ public function StoreUserOnDatabase(){
         $clustermanagers    = !empty($clustermanager) ? implode(',', $clustermanager) : '';
         $userpsts           = !empty($userpst) ? implode(',', $userpst) : '';
         $sales_coordinators = !empty($sales_coordinator) ? implode(',', $sales_coordinator) : '';
-        $selectbds          = rtrim($selectbds, ",");
-        $clustermanagers    = rtrim($clustermanagers, ",");
-        $userpsts           = rtrim($userpsts, ",");
-        $sales_coordinators = rtrim($sales_coordinators, ",");
+        $selectbds          = rtrim($selectbds ?? '', ",");
+        $clustermanagers    = rtrim($clustermanagers ?? '', ",");
+        $userpsts           = rtrim($userpsts ?? '', ",");
+        $sales_coordinators = rtrim($sales_coordinators ?? '', ",");
         $updates_user_id    = $selectbds.','.$clustermanagers.','.$userpsts.','.$sales_coordinators;
-        $updates_user_id    = rtrim($updates_user_id, ",");
+        $updates_user_id    = rtrim($updates_user_id ?? '', ",");
         // If $updates_user_id is empty, set it to null or an empty value
         if (empty($updates_user_id)) {
             $updates_user_id = ''; // Or null, depending on your requirement
@@ -31622,12 +32525,12 @@ public function StoreUserOnDatabase(){
         $clustermanagers    = !empty($clustermanager) ? implode(',', $clustermanager) : '';
         $userpsts           = !empty($userpst) ? implode(',', $userpst) : '';
         $sales_coordinators = !empty($sales_coordinator) ? implode(',', $sales_coordinator) : '';
-        $selectbds          = rtrim($selectbds, ",");
-        $clustermanagers    = rtrim($clustermanagers, ",");
-        $userpsts           = rtrim($userpsts, ",");
-        $sales_coordinators = rtrim($sales_coordinators, ",");
+        $selectbds          = rtrim($selectbds ?? '', ",");
+        $clustermanagers    = rtrim($clustermanagers ?? '', ",");
+        $userpsts           = rtrim($userpsts ?? '', ",");
+        $sales_coordinators = rtrim($sales_coordinators ?? '', ",");
         $updates_user_id    = $selectbds.','.$clustermanagers.','.$userpsts.','.$sales_coordinators;
-        $updates_user_id    = rtrim($updates_user_id, ",");
+        $updates_user_id    = rtrim($updates_user_id ?? '', ",");
         $query =  $this->db->query("UPDATE `user_details` SET `ash_s_co`='$authUserId' WHERE user_id IN ($updates_user_id)");
         $regional_manager_user_ids              = implode(',', $regional_manager);
         $assistant_cluster_manager_user_ids     = implode(',', $assistant_cluster_manager);
@@ -32223,13 +33126,19 @@ public function GetUserMappingFiledBySelectedRole(){
                   ];
                   $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                  
-                  $storeNewteamlog = [
-                      'type_id'=>$newtype_id,
-                      'admin_id'=>$admin_id,
-                      'sales_co'=>$sc_user_id,
-                      'pst_co'=>array_merge($selectbd, $clustermanager)
-                  ];
-                  $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+                 $storeNewteamlog = [
+                        'type_id'  => $newtype_id,
+                        'admin_id' => $admin_id,
+                        'sales_co' => $sc_user_id,
+                        'pst_co'   => array_merge(
+                            (array)$selectbd,
+                            (array)$clustermanager
+                        )
+                    ];
+
+                    $storeNewteamlogjson = json_encode($storeNewteamlog);
+
+
                   // Close to create log
                 // Start to Reset the column
                 $query =  $this->db->query("UPDATE `user_details` SET `pst_co`='0' WHERE pst_co = '$authUserId'");
@@ -32275,14 +33184,14 @@ public function GetUserMappingFiledBySelectedRole(){
             }else if($newtype_id == 15){
                
                 $selectbds       = implode(',', $selectbd);
-                $selectbds       = rtrim($selectbds, ",");
+                $selectbds       = rtrim($selectbds ?? '', ",");
                 $clustermanagers = implode(',', $clustermanager);
-                $clustermanagers = rtrim($clustermanagers, ",");
+                $clustermanagers = rtrim($clustermanagers ?? '', ",");
                 $userpsts        = implode(',', $userpst);
-                $userpsts        = rtrim($userpsts, ",");
+                $userpsts        = rtrim($userpsts ?? '', ",");
                 $sc_user_id      = $authUserId;
                 $updates_user_id = $selectbds.','.$clustermanagers.','.$userpsts;
-                $updates_user_id        = rtrim($updates_user_id, ",");
+                $updates_user_id        = rtrim($updates_user_id ?? '', ",");
                  // Start to create log
                  $checkuserOldDataQuery       =   $this->db->query("SELECT user_id FROM `user_details` WHERE sales_co = '$authUserId'");
                  $checkuserOldData            =   $checkuserOldDataQuery->result();
@@ -32297,12 +33206,18 @@ public function GetUserMappingFiledBySelectedRole(){
                  ];
                  $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                 
-                 $storeNewteamlog = [
-                     'type_id'=>$newtype_id,
-                     'admin_id'=>$admin_id,
-                     'sales_co'=>array_merge($selectbd, $clustermanager,$userpst)
-                 ];
-                 $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+                $storeNewteamlog = [
+                    'type_id'  => $newtype_id,
+                    'admin_id' => $admin_id,
+                    'sales_co' => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst
+                    )
+                ];
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
                  // Close to create log
                 // Start to Reset the column
                 $query =  $this->db->query("UPDATE `user_details` SET `sales_co`='0' WHERE sales_co = '$authUserId'");
@@ -32366,11 +33281,19 @@ public function GetUserMappingFiledBySelectedRole(){
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'admin_id'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                    'type_id'  => $newtype_id,
+                    'admin_id' => $admin_id,
+                    'sales_co' => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
+
                 // Close to create log
                  // Start to Reset the column
                 $query =  $this->db->query("UPDATE `user_details` SET `admin_id`='0' WHERE admin_id = '$authUserId'");
@@ -32420,11 +33343,18 @@ public function GetUserMappingFiledBySelectedRole(){
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'ea_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                    'type_id'  => $newtype_id,
+                    'admin_id' => $admin_id,
+                    'ea_co'    => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
                 // Close to create log
             
                 // Start to Reset the column
@@ -32473,11 +33403,17 @@ public function GetUserMappingFiledBySelectedRole(){
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'ash_nae_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                    'type_id'    => $newtype_id,
+                    'admin_id'   => $admin_id,
+                    'ash_nae_co' => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
                 // Close to create log
                 
                  // Start to Reset the column
@@ -32522,12 +33458,20 @@ public function GetUserMappingFiledBySelectedRole(){
                 ];
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
-                $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'ash_w_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                 $storeNewteamlog = [
+                    'type_id'  => $newtype_id,
+                    'admin_id' => $admin_id,
+                    'ash_w_co' => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
+
                 // Close to create log
     
                 // Start to Reset the column
@@ -32572,12 +33516,20 @@ public function GetUserMappingFiledBySelectedRole(){
                 ];
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
-                $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'ash_s_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
-                ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+                 $storeNewteamlog = [
+                        'type_id'  => $newtype_id,
+                        'admin_id' => $admin_id,
+                        'ash_s_co' => array_merge(
+                            (array)$selectbd,
+                            (array)$clustermanager,
+                            (array)$userpst,
+                            (array)$sales_coordinator
+                        )
+                    ];
+
+                    $storeNewteamlogjson = json_encode($storeNewteamlog);
+
+
                 // Close to create log
                
                 // Start to Reset the column
@@ -32622,13 +33574,29 @@ public function GetUserMappingFiledBySelectedRole(){
                     'rm_east_co'=>$adminMapArray
                 ];
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
-               
+
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'rm_east_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
-                ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+                        'type_id' => $newtype_id,
+                        'admin_id' => $admin_id,
+                        'rm_east_co' => array_merge(
+                            (array)$selectbd,
+                            (array)$clustermanager,
+                            (array)$userpst,
+                            (array)$sales_coordinator
+                        )
+                    ];
+
+                    $storeNewteamlogjson = json_encode($storeNewteamlog, true);
+               
+                // $storeNewteamlog = [
+                //     'type_id'=>$newtype_id,
+                //     'admin_id'=>$admin_id,
+                //     'rm_east_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                // ];
+                // $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+
+
                 // Close to create log
                 // Start to Reset the column
                  $query =  $this->db->query("UPDATE `user_details` SET `rm_east_co`='0' WHERE rm_east_co = '$authUserId'");
@@ -32686,11 +33654,19 @@ public function GetUserMappingFiledBySelectedRole(){
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'rm_north_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                    'type_id'    => $newtype_id,
+                    'admin_id'   => $admin_id,
+                    'rm_north_co'=> array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
+
                 // Close to create log
                  // Start to Reset the column
                  $query =  $this->db->query("UPDATE `user_details` SET `rm_north_co`='0' WHERE rm_north_co = '$authUserId'");
@@ -32746,11 +33722,18 @@ public function GetUserMappingFiledBySelectedRole(){
                 $storeOldteamlogjson = json_encode($storeOldteamlog,true);
                
                 $storeNewteamlog = [
-                    'type_id'=>$newtype_id,
-                    'admin_id'=>$admin_id,
-                    'acm_co'=>array_merge($selectbd, $clustermanager,$userpst,$sales_coordinator)
+                    'type_id'  => $newtype_id,
+                    'admin_id' => $admin_id,
+                    'acm_co'   => array_merge(
+                        (array)$selectbd,
+                        (array)$clustermanager,
+                        (array)$userpst,
+                        (array)$sales_coordinator
+                    )
                 ];
-                $storeNewteamlogjson = json_encode($storeNewteamlog,true);
+
+                $storeNewteamlogjson = json_encode($storeNewteamlog);
+
                 // Close to create log
                 $query =  $this->db->query("UPDATE `user_details` SET `acm_co`='0' WHERE acm_co = '$authUserId'");
                 // Start to Reset the column
@@ -34483,9 +35466,21 @@ if($annual_rid ==''){
         $to_be_Nurture_in_q1 = '';
     }
 
-    function ensure_five_elements($array) {
-        return array_pad($array, 8, '');
-    }
+    // function ensure_five_elements($array) {
+    //     return array_pad($array, 8, '');
+    // }
+
+    // function ensure_five_elements(array $array): array
+    // {
+    //     return array_pad($array, 8, '');
+    // }
+
+    function ensure_five_elements($array): array
+        {
+            return array_pad($array ?? [], 8, '');
+        }
+
+
     // $start_date = $this->Menu_model->getFinancialYearRange(); 
     $start_date     = $this->Menu_model->getCustmizeFinancialYear('current');
     $financial_year = (new DateTime($start_date['start_date']))->format('Y');
@@ -34837,6 +35832,10 @@ public function NewAnnualReviewReport(){
    $user_types          = $this->Menu_model->get_user_type();
    $bd_annualData       = $this->Menu_model->GetNewBDAnnualReviewData($uid,$cfyear,$target_types);
 
+// echo $this->db->last_query();
+// flush();
+
+
 //    dd($bd_annualData);
 
 //    echo $this->db->last_query();
@@ -34926,6 +35925,9 @@ public function CheckAnnualReviewReportData($fyear,$tar_uid,$rtype){
     $financial_Year = $this->Menu_model->getCustmizeFinancialYear();      
 
     $annualDatasCompanyLists      = $this->Menu_model->GetBDAnnualReviewCompanyData1($fyear,$tar_uid,$rtype);
+
+    // echo $this->db->last_query();
+    // die;
     
     $this->load->view('Functions/CheckAnnualReviewReportData',[
         'uid'                       => $uid,
@@ -34973,6 +35975,8 @@ public function CheckAnnualReviewDetailsReport($amrid){
     $financial_Year     = $this->Menu_model->getFinancialYearRange(); 
     $annualDatasCompanyLists     = $this->Menu_model->GetAnnualMainReviewDetailsData($amrid); 
     $singleannualData     = $this->Menu_model->GetAnnualMainReviewDetailsDataByID($amrid); 
+
+    
     
     if(!empty($user)){
         $this->load->view($dep_name.'/CheckAnnualReviewDetailsReport',['uid'=>$uid,'user'=>$user,'amrAllDatas'=>$amrAllDatas,'financial_Year'=>$financial_Year,'annualDatasCompanyLists'=>$annualDatasCompanyLists,'amrid'=>$amrid,'singleannualData'=>$singleannualData]);
@@ -35512,12 +36516,14 @@ public function GetTodaysPlannedTravelMeetingsData(){
 public function TodaysUserTotalTimeSpentByUrlPath(){
    
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 by parallel-fix agent C
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     $dt             = $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     if(isset($_POST['tdate'])){
         $tdate = $_POST['tdate'];
         $tuser_id = $_POST['tuser_id'];
@@ -35627,7 +36633,7 @@ public function UploadCompanyAndUpdateDataByCSV()
                     }
                     $updatecompQuery = $this->db->query("UPDATE company_master SET compname = '$company_name' WHERE id = '$cid'");
                     // Start To Contact Person Name Update or New Insert
-                    $primary_cpoc_person = trim($primary_cpoc_person);
+                    $primary_cpoc_person = trim($primary_cpoc_person ?? '');
                     if($primary_cpoc_person !=='' && $primary_cpoc_person !== '-'){
                         $pcquery        =  $this->db->query("SELECT * FROM `company_contact_master` WHERE company_id = '$cid' AND contactperson = '$primary_cpoc_person'");
                         $pcqueryData    =  $pcquery->result();
@@ -36259,6 +37265,7 @@ public function NoRPConvertAfterChecking(){
 }
 public function PendingForWriteMomMeetingList(){
     $user           = $this->session->userdata('user');
+     if(empty($user)){ redirect('Menu/main');}
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
@@ -36266,11 +37273,22 @@ public function PendingForWriteMomMeetingList(){
     $dt=$this->Menu_model->get_utype($uyid);
     $dep_name = $dt[0]->name;
     $pendingForWriteMomMeetingLists   = $this->Menu_model->GetPendingForWriteMomMeetingList($uid);
-    if(!empty($user)){
-        $this->load->view($dep_name.'/PendingForWriteMomMeetingList',['uid'=>$uid,'user'=>$user,'pendingForWriteMomMeetingLists'=>$pendingForWriteMomMeetingLists,'user_tupe_id'=>$uyid]);
-    }else{
-        redirect('Menu/main');
-    }
+
+
+    $this->load->view('Functions/PendingForWriteMomMeetingList',[
+        'uid'                               => $uid,
+        'user'                              => $user,
+        'getreqData'                        => $getreqData,
+        'dep_name'                          => $dep_name,
+        'pendingForWriteMomMeetingLists'    => $pendingForWriteMomMeetingLists,
+        'user_tupe_id'                      => $uyid,
+        ]);
+
+    // if(!empty($user)){
+    //     $this->load->view($dep_name.'/PendingForWriteMomMeetingList',['uid'=>$uid,'user'=>$user,'pendingForWriteMomMeetingLists'=>$pendingForWriteMomMeetingLists,'user_tupe_id'=>$uyid]);
+    // }else{
+    //     redirect('Menu/main');
+    // }
 }
 public function GetTeamTaskOnSelfOrOtherFunnelTask(){
     $user           = $this->session->userdata('user');
@@ -36352,7 +37370,7 @@ public function GetOurOrTeamTodaysPendingMeetingsTask($tdate){
     $dep_name       = $dt[0]->name;
     $totalTasksUserByDatas   = $this->Menu_model->GetTodaysMeetingsPendingTaskByUserId($uid,$tdate);
     $getPMTDRequests         = $this->Menu_model->GetPendingMeetingTaskDekleteRequestByUsers($uid,$tdate);
-  
+
     if(!empty($user)){
         $this->load->view('GetOurOrTeamTodaysPendingMeetingsTask',['uid'=>$uid,'user'=>$user,'tdate'=>$tdate,'totalTasksUserByDatas'=>$totalTasksUserByDatas,'user_type'=>$uyid,'dep_name'=>$dep_name,'getPMTDRequests'=>$getPMTDRequests]);
     }else{
@@ -38323,7 +39341,7 @@ public function CheckTargetSettingDoneOrNot(){
         $clusterDatas = $this->Menu_model->getClusterByid($cluster_id);
         if(sizeof($clusterDatas) > 0){
         $cluster_in_district    = $clusterDatas[0]->in_district;
-        $cluster_in_district   = rtrim($cluster_in_district, ",");
+        $cluster_in_district   = rtrim($cluster_in_district ?? '', ",");
         $districtsDatas = $this->Menu_model->GetInDistrict($cluster_in_district);
         foreach($districtsDatas as $d){
             echo  "<option value='$d->districtid'>$d->district_title</option>";
@@ -40519,13 +41537,15 @@ public function ChangeCompanyCompanyLocationontheMap(){
 // *********************** leave management start *********************** 
 public function LeaveManagement(){
     $user           = $this->session->userdata('user');
+    if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+    // session guard added 28 May 2026 by parallel-fix agent C
     $data['user']   = $user;
     $uid            = $user['user_id'];
     $uyid           =  $user['type_id'];
     $this->load->model('Menu_model');
     if(empty($user)){redirect('Menu/main');}
     $dt             = $this->Menu_model->get_utype($uyid);
-    $dep_name       = $dt[0]->name;
+    $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
     $leavsDatas     = $this->Menu_model->GetLeaveManagementDatas($uid);
     $cffYear        = $this->Menu_model->FindCurrentFinancialYear();
     $this->load->view('Functions/LeaveManagement',[
@@ -41135,10 +42155,8 @@ $uid = $user['user_id'];
 
 
 
-
-
 // Start school Identi fication Request
-public function schoolIdentificationRequest(){
+public function schoolIdentificationRequest_BKP_20260521(){
 
         $user           = $this->session->userdata('user');
         $data['user']   = $user;
@@ -41188,6 +42206,8 @@ public function schoolIdentificationRequest(){
         $verify_handover_id         = $this->input->post('handover_id');
         $school_letter_remarks      = $this->input->post('school_letter_remarks');
         $dm_deo_letter_remarks      = $this->input->post('dm_deo_letter_remarks');
+
+        $generate_task_id = 0;
 
         $uploadPath = 'uploads/BDRequest/';
         if (!is_dir($uploadPath)) {
@@ -41447,6 +42467,349 @@ public function schoolIdentificationRequest(){
         redirect('Menu/Dashboard');
         
 }
+
+
+
+
+
+
+/**
+ * Start School Identification Request
+ * Handles submission of BD Request, file uploads, task creation, and school generation
+ */
+public function schoolIdentificationRequest()
+{
+    // -------------------------------------------------------------
+    // 1. Initialization & Session Data
+    // -------------------------------------------------------------
+    $user = $this->session->userdata('user');
+    if (!$user) {
+        $this->session->set_flashdata('error_message', 'Session expired. Please login again.');
+        redirect('Login');
+        return;
+    }
+
+    $data['user']   = $user;
+    $current_uid    = $user['user_id'];
+    $uyid           = $user['type_id'];
+    $this->load->model('Menu_model');
+
+    // -------------------------------------------------------------
+    // 2. Retrieve POST Inputs with safe defaults
+    // -------------------------------------------------------------
+    $uid                    = $this->input->post('uid');
+    $req_taskid             = $this->input->post('req_taskid');
+    $sales_cid              = $this->input->post('sales_cid');
+    $ctype                  = $this->input->post('ctype');
+    $request_type           = $this->input->post('request_type');
+    $targetd                = $this->input->post('targetd');         // Target Date
+    $cname                  = $this->input->post('cname');
+
+    $single_or_multi_location = $this->input->post('single_or_multi_location'); // 'single' or 'multiple'
+
+    // Single location fields (may be arrays or strings)
+    $single_location_name   = $this->input->post('single_location_name');
+    $single_num_schools     = $this->input->post('single_num_schools');
+
+    // Multiple location fields
+    $multiple_location_name = $this->input->post('multiple_location_name');
+    $multiple_num_schools   = $this->input->post('multiple_num_schools');
+
+    // School identification specific fields
+    $tyschool               = $this->input->post('tyschool');
+    $noschool               = (int) $this->input->post('noschool');
+    $remark                 = $this->input->post('remark');
+    $idetype                = $this->input->post('idetype');         // Physical or Virtual
+    $sletter                = $this->input->post('sletter');         // Yes/No
+    $dmletter               = $this->input->post('dmletter');        // Yes/No
+
+    $verify_handover_id     = $this->input->post('handover_id');
+    $school_letter_remarks  = $this->input->post('school_letter_remarks');
+    $dm_deo_letter_remarks  = $this->input->post('dm_deo_letter_remarks');
+
+    // Compute location count based on selection
+    $locationcount = 0;
+    if ($single_or_multi_location == 'single') {
+        $locationcount = 1;
+    } elseif ($single_or_multi_location == 'multiple') {
+        $locationcount = is_array($multiple_location_name) ? count($multiple_location_name) : 0;
+    }
+
+    // Convert client type to integer code
+    if ($ctype == 'On Board Client') {
+        $ctype = 1;
+    } elseif ($ctype == 'New Client') {
+        $ctype = 2;
+    }
+
+    $fwd_date = date("Y-m-d H:i:s");
+    $generate_task_id = 0;       // Will hold the last created task ID (used for chaining)
+    $call_visit = '';            // FIX: initialize variable before any possible use
+
+    // -------------------------------------------------------------
+    // 3. File Upload Handling
+    // -------------------------------------------------------------
+    $uploadPath = 'uploads/BDRequest/';
+    if (!is_dir($uploadPath)) {
+        mkdir($uploadPath, 0777, true);
+    }
+
+    // NGO letter (always uploaded)
+    $ngoletter_path = $this->Menu_model->UploadBDRequestfile('filename', $uploadPath);
+
+    // School request draft (if sletter == 'Yes')
+    $school_request_draft_path = '';
+    if ($sletter == 'Yes') {
+        $school_request_draft_path = $this->Menu_model->UploadBDRequestfile('school_request_draft', $uploadPath);
+    }
+
+    // DM/DEO letter draft (if dmletter == 'Yes')
+    $dm_deo_draft_path = '';
+    if ($dmletter == 'Yes') {
+        $dm_deo_draft_path = $this->Menu_model->UploadBDRequestfile('dm_deo_draft', $uploadPath);
+    }
+
+    // -------------------------------------------------------------
+    // 4. Submit BD Request (main record)
+    // -------------------------------------------------------------
+    $bdrid = $this->Menu_model->SubmitBDRequestSchoolIdentification(
+        $ctype,
+        $uid,
+        $targetd,
+        $request_type,
+        $remark,
+        $cname,
+        $tyschool,
+        $noschool,
+        $locationcount,
+        $single_or_multi_location,
+        $idetype,
+        $ngoletter_path,
+        $school_request_draft_path,
+        $dm_deo_draft_path,
+        $sletter,
+        $dmletter,
+        $sales_cid,
+        $verify_handover_id,
+        $school_letter_remarks,
+        $dm_deo_letter_remarks
+    );
+
+    if (!$bdrid) {
+        $this->session->set_flashdata('error_message', 'Failed to create BD Request. Please try again.');
+        redirect('Menu/Dashboard');
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // 5. Save Locations and Create DM/DEO Letter Tasks (if required)
+    // -------------------------------------------------------------
+    if ($single_or_multi_location == 'single') {
+        // Single location: ensure it's an array for uniform processing
+        $locations = is_array($single_location_name) ? $single_location_name : [$single_location_name];
+        $schoolCounts = is_array($single_num_schools) ? $single_num_schools : [$single_num_schools];
+
+        foreach ($locations as $idx => $locName) {
+            $numSchools = isset($schoolCounts[$idx]) ? $schoolCounts[$idx] : 0;
+            $this->Menu_model->AddBDRLocation($bdrid, $locName, $numSchools);
+
+            if ($dmletter == 'Yes') {
+                $task_action = 89; // DM/DEO Letter
+                $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                    $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                    $remark, 0, 0, $idetype, $locName, ''
+                );
+            }
+        }
+    } elseif ($single_or_multi_location == 'multiple') {
+        // Multiple locations
+        if (is_array($multiple_location_name)) {
+            foreach ($multiple_location_name as $idx => $locName) {
+                $numSchools = isset($multiple_num_schools[$idx]) ? $multiple_num_schools[$idx] : 0;
+                $this->Menu_model->AddBDRLocation($bdrid, $locName, $numSchools);
+
+                if ($dmletter == 'Yes') {
+                    $task_action = 89; // DM/DEO Letter
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, 0, 0, $idetype, $locName, ''
+                    );
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // 6. School Generation & Task Creation
+    // -------------------------------------------------------------
+    if ($verify_handover_id !== '') {
+        // ---------- Case A: Handover exists (use existing schools) ----------
+        $getSchoolsOnHandoverTimes = $this->Menu_model->GetSchoolDataonHandoverTime($verify_handover_id);
+        $handoverSchoolsCount = count($getSchoolsOnHandoverTimes);
+
+        $k = 0;
+        for ($i = 1; $i <= $noschool; $i++) {
+            if ($i <= $handoverSchoolsCount) {
+                // Use existing school from handover
+                $rsid = $getSchoolsOnHandoverTimes[$k]->id;
+                $sid  = 0;
+
+                // Set call_visit based on idetype
+                $call_visit = ($idetype == 'Physical') ? 'Visit' : 'Call';
+
+                if ($idetype == 'Physical') {
+                    // Physical: only Visit task (130)
+                    $task_action = 130;
+                    $aftertask = 0;
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                    );
+                } else {
+                    // Virtual: Research task (83)
+                    $task_action = 83;
+                    $aftertask = 0;
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                    );
+                }
+
+                // School letter task (if required) – chained after the main task
+                if ($sletter == 'Yes') {
+                    $task_action = 88; // School Letter
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, '', $generate_task_id
+                    );
+                }
+                $k++;
+            } else {
+                // Generate a demo school because handover doesn't have enough schools
+                // FIX: Initialize call_visit before calling GenerateDemoSchool...
+                $call_visit = ($idetype == 'Physical') ? 'Visit' : 'Call';
+
+                $rsid = $this->Menu_model->GenerateDemoSchoolOnBDRequestResearchTime(
+                    $cname, $sales_cid, $verify_handover_id, $call_visit, $i, $bdrid
+                );
+                $sid = 0;
+
+                if ($idetype == 'Physical') {
+                    $task_action = 130;   // Visit
+                    $aftertask = $generate_task_id;
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                    );
+                } else {
+                    $task_action = 83;    // Research
+                    $aftertask = 0;
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                    );
+                }
+
+                // School letter task
+                if ($sletter == 'Yes') {
+                    $task_action = 88;
+                    $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                        $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                        $remark, $sid, $rsid, $idetype, '', $generate_task_id
+                    );
+                }
+            }
+        }
+    } else {
+        // ---------- Case B: No handover – generate all schools from scratch ----------
+        for ($i = 1; $i <= $noschool; $i++) {
+            // FIX: Set call_visit before using it in the model call
+            $call_visit = ($idetype == 'Physical') ? 'Visit' : 'Call';
+
+            $rsid = $this->Menu_model->GenerateDemoSchoolOnBDRequestResearchTime(
+                $cname, $sales_cid, $verify_handover_id, $call_visit, $i, $bdrid
+            );
+            $sid = 0;
+
+            if ($idetype == 'Physical') {
+                $task_action = 130;   // Visit
+                $aftertask = $generate_task_id;
+                $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                    $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                    $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                );
+            } else {
+                $task_action = 83;    // Research
+                $aftertask = 0;
+                $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                    $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                    $remark, $sid, $rsid, $idetype, $call_visit, $aftertask
+                );
+            }
+
+            // School letter task
+            if ($sletter == 'Yes') {
+                $task_action = 88;
+                $generate_task_id = $this->Menu_model->CreateTaskAfterBDRequest(
+                    $task_action, $sales_cid, $bdrid, $fwd_date, $targetd, $targetd,
+                    $remark, $sid, $rsid, $idetype, '', $generate_task_id
+                );
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // 7. Update Handover Record (if any)
+    // -------------------------------------------------------------
+    if ($verify_handover_id !== '') {
+        $this->Menu_model->UpdateClientHandoverTableWithBDRequestID($verify_handover_id, $bdrid);
+    }
+
+    $completedatetime = date("Y-m-d H:i:s");
+
+    // -------------------------------------------------------------
+    // 8. Update Special BD Request Task & Calendar Event
+    // -------------------------------------------------------------
+    if (!empty($req_taskid)) {
+        $this->db->where('task_id', $req_taskid);
+        $this->db->update('special_bdrequest_task', ['status' => '1']);
+
+        $data = [
+            'actontaken'         => 'yes',
+            'purpose_achieved'   => 'yes',
+            'nextCFID'           => $req_taskid,
+            'updateddate'        => $completedatetime,
+            'updation_data_type' => 'complete',
+            'updated_at'         => $completedatetime
+        ];
+        $this->db->where('id', $req_taskid);
+        $this->db->update('tblcallevents', $data);
+    }
+
+    // -------------------------------------------------------------
+    // 9. Finish & Redirect
+    // -------------------------------------------------------------
+    $this->session->set_flashdata('success_message', 'BD Request Created Successfully.');
+    redirect('Menu/Dashboard');
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -42664,6 +44027,8 @@ public function CreateSchoolMaintenanceBDRequest(){
 
      public function HandoverDetails(){
         $user           = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent B
         $data['user']   = $user;
         $uid            = $user['user_id'];
         $uyid           =  $user['type_id'];
@@ -42672,7 +44037,7 @@ public function CreateSchoolMaintenanceBDRequest(){
         // }
         $this->load->model('Menu_model');
         $dt = $this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
         $handoverDatas  =  $this->Menu_model->GetAllHandoverDetailsLists($uid);
 
@@ -42688,13 +44053,15 @@ public function CreateSchoolMaintenanceBDRequest(){
 
      public function BDRequestDetails(){
         $user           = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent B
         $data['user']   = $user;
         $uid            = $user['user_id'];
         $uyid           =  $user['type_id'];
         
         $this->load->model('Menu_model');
         $dt = $this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
         $allBDRequestDatas  =  $this->Menu_model->GetAllBDRequestDetailsLists($uid);
 
@@ -42812,10 +44179,15 @@ public function CreateSchoolMaintenanceBDRequest(){
 
 
 
-    public function BDRequestApprovedByLineManager(){
+
+
+
+
+    public function BDRequestApprovedByLineManager_BKP_20260521(){
 
         $this->load->model('Menu_model');
         $this->load->library('session');
+        $db3 = $this->load->database('db3', TRUE);
 
         $db3                                    = $this->load->database('db3', TRUE);
         $user                                   = $this->session->userdata('user');
@@ -42828,7 +44200,7 @@ public function CreateSchoolMaintenanceBDRequest(){
         $bd_request_id                          = $this->input->post('bd_request_id_bylm');
         $bd_request_lm_status                   = $this->input->post('bd_request_lm_status');
         $lm_apr_status                          = $this->input->post('lm_apr_status'); // Approve || Reject
-        $remarks                                = trim($this->input->post('bd_request_remarks'));
+        $remarks                                = trim($this->input->post('bd_request_remarks') ?? '');
         $bd_request_apr_status_by_whome         = $this->input->post('bd_request_apr_status_by_whome'); // LineManager || admin
         $perform_by_project_coordinator         = $this->input->post('perform_by_project_coordinator'); // LineManager || admin
 
@@ -42889,13 +44261,12 @@ public function CreateSchoolMaintenanceBDRequest(){
 
             if($approve_by_admin_types == 'Project Coordinator'){
 
-                if($bd_request_id == 1691){
-
-                    $task_lists = $this->Menu_model->GetBDRequestIndetificationsTaskList($bd_request_id);
-                    if(sizeof($task_lists) > 0){
-                        $this->Menu_model->DELETEBDRequestIndetificationsTaskList($bd_request_id);
-                    }
+     
+                $task_lists = $this->Menu_model->GetBDRequestIndetificationsTaskList($bd_request_id);
+                if(sizeof($task_lists) > 0){
+                    $this->Menu_model->DELETEBDRequestIndetificationsTaskList($bd_request_id);
                 }
+                
         
                 $project_coordinator_uid    = $this->input->post('perform_by_project_coordinator'); // Project Coordinator UID
 
@@ -42963,7 +44334,6 @@ public function CreateSchoolMaintenanceBDRequest(){
 
                 }
 
-
                 $approvedStatusData = array(
                         'assignstatus'          => 1,
                         'assign_by'             => $uid,
@@ -42971,7 +44341,7 @@ public function CreateSchoolMaintenanceBDRequest(){
                         'assigning_remarks'     => "$remarks"
                 );
 
-                $db3->where('id', $bd_request_id );
+                $db3->where('id', $bd_request_id);
                 $db3->update('bdrequest', $approvedStatusData);
 
 
@@ -43084,6 +44454,242 @@ public function CreateSchoolMaintenanceBDRequest(){
         redirect('Menu/BDRequestListDetails/'.$uid.'/'.$rtype.'/'.$requestStatus);
 
     }
+
+
+
+    public function BDRequestApprovedByLineManager()
+{
+    $this->load->model('Menu_model');
+    $this->load->library('session');
+
+    // Load database 'db3' only once
+    $db3 = $this->load->database('db3', TRUE);
+
+    $user               = $this->session->userdata('user');
+    $data['user']       = $user;
+    $uid                = $user['user_id'];
+    $uyid               = $user['type_id'];
+
+    $rtype              = $this->input->post('rtype');
+    $requestStatus      = $this->input->post('requestStatus');
+    $bd_request_id      = $this->input->post('bd_request_id_bylm');
+    $bd_request_lm_status = $this->input->post('bd_request_lm_status');
+    $lm_apr_status      = $this->input->post('lm_apr_status');     // Approve || Reject
+    $remarks            = trim($this->input->post('bd_request_remarks') ?? '');
+    $bd_request_apr_status_by_whome = $this->input->post('bd_request_apr_status_by_whome'); // LineManager || Admin
+    $perform_by_project_coordinator = $this->input->post('perform_by_project_coordinator'); // UID of Project Coordinator
+
+    // ==================== LINE MANAGER APPROVAL ====================
+    if ($bd_request_apr_status_by_whome == 'LineManager') {
+
+        if ($lm_apr_status == 'Approve') {
+            $approvedStatusData = [
+                'approve_status'  => 1,
+                'approve_by'      => $uid,
+                'approve_remarks' => $remarks,
+                'approve_date'    => date("Y-m-d H:i:s")   // FIXED: 's' for seconds, not 'S'
+            ];
+        } elseif ($lm_apr_status == 'Reject') {
+            $approvedStatusData = [
+                'approve_status'  => 2,
+                'approve_by'      => $uid,
+                'approve_remarks' => $remarks,
+                'approve_date'    => date("Y-m-d H:i:s")
+            ];
+        } else {
+            $this->session->set_flashdata('error_message', ' ! Invalid approval status.');
+            redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+        }
+
+        $db3->where('id', $bd_request_id);
+        $db3->update('bdrequest', $approvedStatusData);
+
+        if ($db3->affected_rows() > 0) {
+            $this->session->set_flashdata('success_message', ' * BD Request Processed Successfully By Line Manager.');
+        } else {
+            $this->session->set_flashdata('error_message', ' ! Failed to process BD Request By Line Manager.');
+        }
+    }
+    // ==================== ADMIN APPROVAL ====================
+    elseif ($bd_request_apr_status_by_whome == 'Admin') {
+
+        if ($lm_apr_status == 'Approve') {
+
+            // --- Special handling for SSCHOOLID request type ---
+            if ($rtype == 'SSCHOOLID') {
+
+                $approve_by_admin_types = $this->input->post('approve_by_admin_types'); // "Project Coordinator" or "PIA"
+
+                if (empty($approve_by_admin_types)) {
+                    $this->session->set_flashdata('error_message', ' ! Please select "Perform By" (Project Coordinator or PIA).');
+                    redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+                }
+
+                // ----- Project Coordinator assignment -----
+                if ($approve_by_admin_types == 'Project Coordinator') {
+
+                    // Clear existing task list for this BD request
+                    $task_lists = $this->Menu_model->GetBDRequestIndetificationsTaskList($bd_request_id);
+                    if (count($task_lists) > 0) {
+                        $this->Menu_model->DELETEBDRequestIndetificationsTaskList($bd_request_id);
+                    }
+
+                    $project_coordinator_uid = $this->input->post('perform_by_project_coordinator');
+                    if (empty($project_coordinator_uid)) {
+                        $this->session->set_flashdata('error_message', ' ! Please select a Project Coordinator.');
+                        redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+                    }
+
+                    // Fetch BD request data
+                    $getQuery = $db3->query("SELECT * FROM bdrequest WHERE id = '$bd_request_id'");
+                    $bdrDatas = $getQuery->result();
+                    if (empty($bdrDatas)) {
+                        $this->session->set_flashdata('error_message', ' ! BD Request not found.');
+                        redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+                    }
+
+                    $cid         = $bdrDatas[0]->cid;
+                    $sales_cid   = $bdrDatas[0]->sales_cid;
+                    $ch_id       = $bdrDatas[0]->ch_id;
+                    $noofschool  = $bdrDatas[0]->noofschool;
+                    $rysn        = $bdrDatas[0]->rysn;
+                    $request_type= $bdrDatas[0]->request_type;
+                    $sid         = $bdrDatas[0]->sid;
+
+                    // Get all SPD request entries for this BD request
+                    $spdRequestIdentifications = $this->Menu_model->GetAllSPDRequestByBDRID($bd_request_id);
+
+                    // Determine final CID
+                    if (empty($cid) && !empty($sales_cid)) {
+                        $cid = $sales_cid;
+                    } elseif (empty($sales_cid) && !empty($cid)) {
+                        $cid = $cid;
+                    } elseif (empty($cid) && empty($sales_cid)) {
+                        $this->session->set_flashdata('error_message', ' ! CID and Sales CID both are empty. Cannot proceed.');
+                        redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+                    }
+
+                    $cmpDatas = $this->Menu_model->getCompanyStatus($cid);
+                    if (empty($cmpDatas)) {
+                        $this->session->set_flashdata('error_message', ' ! Company not found for given CID.');
+                        redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+                    }
+
+                    $init_id     = $cmpDatas[0]->id;
+                    $cstatus     = $cmpDatas[0]->cstatus;
+                    $touid       = $project_coordinator_uid;
+                    $assigned_by = $uid;
+                    $tdate       = date("Y-m-d H:i:s");
+                    $initId      = $init_id;
+                    $comments    = "BD Request Approved by Sales Admin and Assigned to Project Coordinator.";
+
+                    // Initialize $taskID to avoid undefined variable warning
+                    $taskID = null;
+                    $aftertask = '';
+
+                    foreach ($spdRequestIdentifications as $spdRequestIdentification) {
+                        $rsid = $spdRequestIdentification->id;
+                        $sid  = $rsid;   // override sid with spd_request id (as per original logic)
+                        $taskActionID = 25;
+                        $purposeId    = 143;
+
+                        // Create task and get task ID
+                        $taskID = $this->Menu_model->CreateSchoolIndentificationTaskRSID(
+                            $touid, $assigned_by, $tdate, $initId, $comments,
+                            $cstatus, $aftertask, $taskActionID, $purposeId, $sid, $bd_request_id
+                        );
+
+                        // Update spd_request with mapping data
+                        $pcMappedArray = [
+                            'pc_uid'            => $project_coordinator_uid,
+                            'pc_by'             => $project_coordinator_uid,
+                            'sales_tbl_task_id' => $taskID
+                        ];
+                        $db3->where('id', $rsid);
+                        $db3->update('spd_request', $pcMappedArray);
+                    }
+
+                    // Update bdrequest as assigned
+                    $assignData = [
+                        'assignstatus'      => 1,
+                        'assign_by'         => $uid,
+                        'assignid_date'     => date("Y-m-d H:i:s"),
+                        'assigning_remarks' => $remarks
+                    ];
+                    $db3->where('id', $bd_request_id);
+                    $db3->update('bdrequest', $assignData);
+                }
+
+                // --- Common admin approval data (for both Project Coordinator and PIA cases) ---
+                // Build the array safely – touid may not exist in PIA case
+                $adminApprovalData = [
+                    'approve_by_admin_status'  => 1,
+                    'approve_by_admin_by'      => $uid,
+                    'approve_by_admin_remarks' => $remarks,
+                    'approve_by_admin_date'    => date("Y-m-d H:i:s")
+                ];
+
+                // Only add 'approve_by_admin_task_by' if we have a Project Coordinator assigned
+                if (isset($touid) && !empty($touid)) {
+                    $adminApprovalData['approve_by_admin_task_by'] = $touid;
+                }
+                // For PIA or other types, add the selected admin type
+                if (isset($approve_by_admin_types) && !empty($approve_by_admin_types)) {
+                    $adminApprovalData['approve_by_admin_types'] = $approve_by_admin_types;
+                }
+
+                $db3->where('id', $bd_request_id);
+                $db3->update('bdrequest', $adminApprovalData);
+
+                if ($db3->affected_rows() > 0) {
+                    $this->session->set_flashdata('success_message', ' * BD Request Approved Successfully By Sales Admin.');
+                } else {
+                    $this->session->set_flashdata('error_message', ' ! Failed to approve BD Request By Sales Admin.');
+                }
+            }
+            // --- End of SSCHOOLID specific handling ---
+            else {
+                // For other request types (non-SSCHOOLID) – simple admin approval
+                $approvedStatusData = [
+                    'approve_by_admin_status'  => 1,
+                    'approve_by_admin_by'      => $uid,
+                    'approve_by_admin_remarks' => $remarks,
+                    'approve_by_admin_date'    => date("Y-m-d H:i:s")
+                ];
+
+                $db3->where('id', $bd_request_id);
+                $db3->update('bdrequest', $approvedStatusData);
+
+                if ($db3->affected_rows() > 0) {
+                    $this->session->set_flashdata('success_message', ' * BD Request Approved Successfully By Sales Admin.');
+                } else {
+                    $this->session->set_flashdata('error_message', ' ! Failed to approve BD Request By Sales Admin.');
+                }
+            }
+        }
+        // ----- Admin Reject -----
+        elseif ($lm_apr_status == 'Reject') {
+            $approvedStatusData = [
+                'approve_by_admin_status'  => 2,
+                'approve_by_admin_by'      => $uid,
+                'approve_by_admin_remarks' => $remarks,
+                'approve_by_admin_date'    => date("Y-m-d H:i:s")
+            ];
+
+            $db3->where('id', $bd_request_id);
+            $db3->update('bdrequest', $approvedStatusData);
+
+            if ($db3->affected_rows() > 0) {
+                $this->session->set_flashdata('success_message', ' * BD Request Rejected Successfully By Sales Admin.');
+            } else {
+                $this->session->set_flashdata('error_message', ' ! Failed to reject BD Request By Sales Admin.');
+            }
+        }
+    }
+
+    // Redirect back to the detail page
+    redirect('Menu/BDRequestListDetails/' . $uid . '/' . $rtype . '/' . $requestStatus);
+}
 
 // Closed To Fecthed Record in Operation APP
 
@@ -43261,10 +44867,10 @@ public function CreateSchoolMaintenanceBDRequest(){
             $new_compconnamecnt = sizeof($new_compconname);
             if($new_compconnamecnt > 0){
                 for($i=0;$i<$new_compconnamecnt;$i++){
-                    $new_compconname[$i]    = trim($new_compconname[$i]);
-                    $new_designation[$i]    = trim($new_designation[$i]);
-                    $new_emailid[$i]        = trim($new_emailid[$i]);
-                    $new_phoneno[$i]        = trim($new_phoneno[$i]);
+                    $new_compconname[$i]    = trim($new_compconname[$i] ?? '');
+                    $new_designation[$i]    = trim($new_designation[$i] ?? '');
+                    $new_emailid[$i]        = trim($new_emailid[$i] ?? '');
+                    $new_phoneno[$i]        = trim($new_phoneno[$i] ?? '');
                     $new_contact_type[$i]   = $new_contact_type[$i];
                     if($new_compconname[$i] !=='' && $new_designation[$i] !=='' && $new_phoneno[$i] !==''){
                         $newContactData = array(
@@ -43586,6 +45192,8 @@ public function CheckUserIsInsideSalesOrNot(){
 
 public function ProgramTimelineDetails(){
         $user           = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent B
         $data['user']   = $user;
         $uid            = $user['user_id'];
         $uyid           =  $user['type_id'];
@@ -43594,7 +45202,7 @@ public function ProgramTimelineDetails(){
         }
         $this->load->model('Menu_model');
         $dt = $this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
         $gettimeline  =  $this->Menu_model->GetAllProgramTimelineDetailsLists($uid);
 
@@ -43607,6 +45215,8 @@ public function ProgramTimelineDetails(){
     }
 public function HandoverTimelineDetails(){
         $user           = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent B
         $data['user']   = $user;
         $uid            = $user['user_id'];
         $uyid           =  $user['type_id'];
@@ -43615,7 +45225,7 @@ public function HandoverTimelineDetails(){
         }
         $this->load->model('Menu_model');
         $dt = $this->Menu_model->get_utype($uyid);
-        $dep_name = $dt[0]->name;
+        $dep_name = (is_array($dt) && !empty($dt) && isset($dt[0]->name)) ? $dt[0]->name : 'home';
 
         $timelineDatas  =  $this->Menu_model->GetAllHandoverTimelineDetailsLists($uid);
 
@@ -45576,6 +47186,8 @@ public function AddCashSpentInVisitTaskLists(){
     $this->load->model('Menu_model');
     $this->load->library('session');
 
+
+
     if (isset($expensecash[0]) && $expensecash[0] < 0) {
         $this->session->set_flashdata('error_message','* Expense amount cannot be negative. Please enter a valid amount.');
         redirect("Menu/UpdateTodaysVisitDetails");
@@ -45610,19 +47222,17 @@ public function AddCashSpentInVisitTaskLists(){
         
         if(sizeof($visitsDatas) > 0){
 
-            $tbl_user_id            = $visitsDatas[0]->user_id;
-            if(sizeof($tblTaskDatas) > 0){
+            $tbl_user_id        = $visitsDatas[0]->user_id;
+            $tbl_task_user_id   = $visitsDatas[0]->user_id;
+            $tuser              = $this->Menu_model->get_userbyid($tbl_task_user_id);
+            $ucash              = $tuser[0]->ucash;
+            if($expense > $ucash){
 
-                $tbl_task_user_id   = $tblTaskDatas[0]->user_id;
-                $tuser              = $this->Menu_model->get_userbyid($tbl_task_user_id);
-                $ucash              = $tuser[0]->ucash;
-                if($expense > $ucash){
-
-                    $this->session->set_flashdata('error_message','* You do not have sufficient cash balance to record this expense. Please check your available cash balance.');
-                    redirect("Menu/UpdateTodaysVisitDetails");
-                    
-                }
+                $this->session->set_flashdata('error_message','* You do not have sufficient cash balance to record this expense. Please check your available cash balance.');
+                redirect("Menu/UpdateTodaysVisitDetails");
+                
             }
+            
         }
 
         for($l = 0; $l < $file_count; $l++) {
@@ -45675,6 +47285,53 @@ public function AddCashSpentInVisitTaskLists(){
     redirect("Menu/UpdateTodaysVisitDetails");
 }
 
+// ********************* Closed - Update Visit Expense BY PC ***********************
+
+
+
+
+
+// ********************* Closed - Update Visit Expense BY PC ***********************
+public function DeepakDashboard()
+{
+    date_default_timezone_set("Asia/Kolkata");  // Updated deprecated timezone
+
+    // Determine selected date
+
+    $tdate = date('Y-m-d');
+    
+
+    $this->load->library('session');
+    $this->load->model('Menu_model');
+    $this->load->model('Report_model');
+
+    $user = $this->session->userdata('user');
+    $data['user'] = $user;
+    $uid = $user['user_id'] ?? null;
+    $uyid = $user['type_id'] ?? null;
+
+    $dt             = $this->Menu_model->get_utype($uyid);
+    $dep_name       = $dt[0]->name;
+
+    // $this->session->unset_userdata('success_message');
+    // $this->session->unset_userdata('error_message');
+
+    $action_counts             = $this->Menu_model->getActionWiseCounts($uid,$tdate);
+
+    // Redirect if not logged in
+    if (empty($user)) {
+        $this->session->set_flashdata('error_message', '* Kindly log in before starting your session.');
+        redirect('Menu/main');
+    }
+
+    $this->load->view('Functions/Dashboard',[
+            'uid'               => $uid,
+            'user'              => $user,
+            'dep_name'          => $dep_name,
+            'action_counts'    => $action_counts,
+    ]);
+
+}
 // ********************* Closed - Update Visit Expense BY PC ***********************
 
 

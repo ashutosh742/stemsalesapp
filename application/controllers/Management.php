@@ -23,14 +23,14 @@ class Management extends Menu {
 
 
         $this->user = $this->session->userdata('user');
-        $this->uid = $this->user['user_id'];
-        $this->uyid =  $this->user['type_id'];
+        $this->uid = !empty($this->user) ? $this->user['user_id'] : null;
+        $this->uyid = !empty($this->user) ? $this->user['type_id'] : null;
 
-        $this->dt = $this->Menu_model->get_utype($this->uyid);
+        $this->dt = $this->uyid ? $this->Menu_model->get_utype($this->uyid) : [];
 
-        $this->dep_name = $this->dt[0]->name;
+        $this->dep_name = (is_array($this->dt) && !empty($this->dt) && isset($this->dt[0]->name)) ? $this->dt[0]->name : 'home';
    
-        if (in_array(!$this->uyid, [15, 13, 2, 4])) {
+        if ($this->uyid !== null && in_array(!$this->uyid, [15, 13, 2, 4])) {
             echo "Stem Learning Pvt Ltd";
             echo "<br/>";
             exit;
@@ -125,6 +125,10 @@ class Management extends Menu {
     // MOM Start Here
 
     public function MoMApprovedStatus(){
+
+        $user = $this->session->userdata('user');
+        if(empty($user) || empty($user['user_id'])){ redirect('login'); return; }
+        // session guard added 28 May 2026 by parallel-fix agent D
 
         if(isset($_POST['sdate'])){
             $cdate = $_POST['sdate'];
@@ -1474,7 +1478,7 @@ public function MomApprovedByUserAdminAfterCheck(){
  
     $cudetail       = $this->Menu_model->get_userbyid($mom_user_id);
     $get_pst_co     = $cudetail[0]->pst_co;
-    $get_utype_id    = $cudetail[0]->type_id;
+    $get_utype_id   = $cudetail[0]->type_id;
 
     if($get_utype_id == 13){
         $clm_aadmin = $cudetail[0]->user_id;
@@ -1482,8 +1486,10 @@ public function MomApprovedByUserAdminAfterCheck(){
         $clm_aadmin = $cudetail[0]->aadmin;
     }
     
-    $this->Management_model->AssignPSTAfterMomApproved($init_cmpid,$get_pst_co);
-    $this->Management_model->AssignCLMAfterMomApproved($init_cmpid,$clm_aadmin);
+    if(!empty($get_pst_co)){$this->Management_model->AssignPSTAfterMomApproved($init_cmpid,$get_pst_co);}
+    if(!empty($clm_aadmin)){$this->Management_model->AssignCLMAfterMomApproved($init_cmpid,$clm_aadmin); }
+    if(!empty($user_acm_co_id)){ $this->Management_model->Assign_ACM_After_MomApproved($init_cmpid,$user_acm_co_id);}
+
 
     if($slsctcurusertype == 4){
         $insert_id = $this->Management_model->CreateTask($fwd_date,$actiontype_id,$init_id,$nextaction,$get_pst_co,$purpose_id,$autotask,$auto_plan,$ccstatus,$task_remarks,$ntid);

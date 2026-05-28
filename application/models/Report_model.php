@@ -24,7 +24,7 @@ class Report_model extends Menu_model{
     }else if($type_id == 21){
         $text = "(u1.ash_s_co='$userid' || u1.user_id = $userid)";
     }else if($type_id == 22){
-        $text = "(u1.rm_east_co='$userid' || u1.user_id = $userid)";
+        $text = "(u1.rm_east_co='$userid' || u1.user_id = '$userid')";
     }else if($type_id == 23){
         $text = "(u1.rm_north_co='$userid' || u1.user_id = $userid)";
     }else if($type_id == 24){
@@ -64,17 +64,17 @@ class Report_model extends Menu_model{
                 }elseif($type_id == 19){
                     $text = "(u1.ash_nae_co = '$userid' || u1.user_id = '$userid')";
                 }else if($type_id == 20){
-                    $text = "(u1.ash_w_co='$userid' || u1.user_id = '$userid' )";
+                    $text = "(u1.ash_w_co='$userid' || u1.user_id = '$userid')";
                 }else if($type_id == 21){
-                    $text = "(u1.ash_s_co='$userid' || u1.user_id = '$userid'";
+                    $text = "(u1.ash_s_co='$userid' || u1.user_id = '$userid')";
                 }else if($type_id == 22){
-                    $text = "(u1.rm_east_co='$userid' || u1.user_id = '$userid'";
+                    $text = "(u1.rm_east_co='$userid' || u1.user_id = '$userid')";
                 }else if($type_id == 23){
                     $text = "(u1.rm_north_co='$userid' || u1.user_id = '$userid')";
                 }else if($type_id == 24){
                     $text = "(u1.acm_co = '$userid' || u1.user_id = '$userid')";
                 }else{
-                    $text = "u1.admin_id = '$userid' ";
+                    $text = "u1.admin_id = '$userid'";
                 }
         }
     }
@@ -447,25 +447,25 @@ public function GetTeamWisePlanedTaskTypeUsingPlanner($userid,$sdate,$edate,$tas
                    }else if($type_id == 3){
                        $text = "AND u1.user_id = $userid";
                    }else if($type_id == 4){
-                       $text = "AND (u1.pst_co = $userid || u1.user_id = $userid)";
+                       $text = "AND (u1.pst_co = $userid || u1.user_id = '$userid')";
                    }else if($type_id == 13){
-                       $text = "AND (u1.aadmin = $userid || u1.user_id = $userid)";
+                       $text = "AND (u1.aadmin = $userid || u1.user_id = '$userid')";
                    }else if($type_id == 15){
                        $text = "AND u1.sales_co = $userid";
                    }elseif($type_id == 19){
-                       $text = "AND (u1.ash_nae_co = '$userid' || u1.user_id = $userid)";
+                       $text = "AND (u1.ash_nae_co = '$userid' || u1.user_id = '$userid')";
                    }else if($type_id == 20){
-                       $text = "AND (u1.ash_w_co='$userid' || u1.user_id = $userid)";
+                       $text = "AND (u1.ash_w_co='$userid' || u1.user_id = '$userid')";
                    }else if($type_id == 21){
-                       $text = "AND (u1.ash_s_co='$userid' || u1.user_id = $userid)";
+                       $text = "AND (u1.ash_s_co='$userid' || u1.user_id = '$userid')";
                    }else if($type_id == 22){
-                       $text = "AND (u1.rm_east_co='$userid' || u1.user_id = $userid)";
+                       $text = "AND (u1.rm_east_co='$userid' || u1.user_id = '$userid')";
                    }else if($type_id == 23){
                        $text = "AND u1.rm_north_co='$userid' || u1.user_id = $userid)";
                    }else if($type_id == 24){
-                       $text = "AND (u1.acm_co = $userid || u1.user_id = $userid)";
+                       $text = "AND (u1.acm_co = '$userid' || u1.user_id = '$userid')";
                    }else{
-                       $text = "AND (u1.admin_id = $userid || u1.user_id = $userid)";
+                       $text = "AND (u1.admin_id = '$userid' || u1.user_id = '$userid')";
                    }
            }
        }
@@ -1001,7 +1001,7 @@ $data = [
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     if($mtypes == 'same_day_planning'){
@@ -1157,7 +1157,7 @@ $data = [
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
  
@@ -1585,10 +1585,18 @@ public function GetActiveTaskData($actiin_id){
 
 public function getAllCompanyBYRollesMaiing($userid,$admin_id_filter,$rm_filter){
     $cfyear = $this->Menu_model->getCurrentFinancialYearStart();
- 
+    // M087 hardening 28 May 2026: never run with empty userid - returns empty result
+    // instead of building broken SQL like 'u1.user_id = ) AND ...' which throws 500.
+    $userid = (int)$userid;
+    if($userid <= 0){
+        return array();
+    }
     $udetail = $this->Menu_model->get_userbyid($userid);
-    $type_id = $udetail[0]->type_id;
-    $inside_sales = $udetail[0]->inside_sales;
+    if(empty($udetail) || !isset($udetail[0])){
+        return array();
+    }
+    $type_id = isset($udetail[0]->type_id) ? (int)$udetail[0]->type_id : 0;
+    $inside_sales = isset($udetail[0]->inside_sales) ? $udetail[0]->inside_sales : 0;
     
     if($type_id == 1){
         $text = "(u1.sadmin_id = $userid || u1.user_id = $userid)";
@@ -2234,7 +2242,7 @@ public function GetFunnelDetails($userid,$mtypes,$userwise){
     $curFinancialDate           = $this->Menu_model->getFinancialYearRange();
     $start_financial_date       = $curFinancialDate['start_date'];
     $end_financial_date         = $curFinancialDate['end_date'];
-    $start_financial_date       = '2025-02-14';
+    $start_financial_date       = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData                     = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -2430,6 +2438,7 @@ public function GetFunnelDetails($userid,$mtypes,$userwise){
         CONCAT('<b>Name :</b>', ccm.contactperson),
         CONCAT('<b>Email : </b>', ccm.emailid),
         CONCAT('<b>Phone : </b>', ccm.phoneno),
+        CONCAT('<b>Designation : </b>', ccm.designation),
         CONCAT('<b>Type : </b>', ccm.type)
     ) AS contact_details,
     last_tblc.id as last_tblc_id,
@@ -2483,13 +2492,14 @@ LEFT JOIN tblcallevents tblc ON tblc.id = init_call.after_task
 LEFT JOIN action ON action.id = tblc.actiontype_id
 LEFT JOIN barginmeeting cbm ON cbm.tid = tblc.id
 LEFT JOIN tblcallevents meet ON meet.cid_id = init_call.id  AND meet.nextCFID !=0 AND meet.actiontype_id IN(3,4) 
-AND cast(meet.appointmentdatetime as Date) >= '$start_financial_date' 
+-- AND cast(meet.appointmentdatetime as Date) >= '$start_financial_date' 
+AND meet.appointmentdatetime >= '$start_financial_date 00:00:00'
 -- AND YEAR(meet.appointmentdatetime) = '$year' 
 AND (meet.mtype = 'RP' OR meet.mtype = 'RPClose' OR meet.mtype = 'Change RP')
 LEFT JOIN user_details u11 ON u11.user_id = meet.user_id
 LEFT JOIN tblcallevents mom_tblc ON mom_tblc.aftertask = meet.id AND mom_tblc.actiontype_id = 6
 LEFT JOIN mom_data ON mom_data.tid = mom_tblc.id 
-LEFT JOIN proposal ON proposal.init_id = init_call.id AND cast(proposal.sdatet as Date) >= '$start_financial_date' 
+LEFT JOIN proposal ON proposal.init_id = init_call.id AND proposal.sdatet >= '$start_financial_date 00:00:00'
 LEFT JOIN (
     SELECT t1.*
     FROM tblcallevents t1
@@ -2573,7 +2583,7 @@ public function GetFunnelDetailsWithCluster($userid,$mtypes,$userwise){
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -2848,7 +2858,7 @@ public function GetFunnelDetailsWithClusterID($userid,$mtypes,$clusterID,$userwi
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -3177,7 +3187,7 @@ public function GetProposalDetailbyDateByRoles($userid,$sdate,$edate,$task_actio
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year = new DateTime($start_financial_date);
     $year = $start_financial_date_year->format('Y');
     $totalProposalTasksQuery = $this->db->query("SELECT
@@ -3629,7 +3639,7 @@ public function GetProposalDetailbyDateByRoles($userid,$sdate,$edate,$task_actio
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
  
@@ -6912,7 +6922,7 @@ public function GetCompanyAfterAssignSameStatusSinceDays($userid,$sdate,$edate,$
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
      if($task_action_id == 'all'){
@@ -7153,7 +7163,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
      if($task_action_id == 'all'){
@@ -7449,7 +7459,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
      if($task_action_id == 'all'){
@@ -7774,7 +7784,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
      if($task_action_id == 'all'){
@@ -8279,7 +8289,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    
@@ -8400,7 +8410,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    
@@ -8468,7 +8478,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    
@@ -8538,7 +8548,7 @@ $conversions =  $query2->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    
@@ -8755,7 +8765,7 @@ public function GetTaskCheckComplete($uid,$sdate,$edate){
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
       
@@ -8815,7 +8825,7 @@ public function GetTaskCheckComplete($uid,$sdate,$edate){
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    $taskactionFilter = "AND tbcl.nextCFID !=0 AND tbcl.actiontype_id = $task_action_id AND ((tbcl.approved_status = 1 || tbcl.approved_status = '')
@@ -8922,7 +8932,7 @@ $data1 =  $query->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    $taskactionFilter = "AND tbcl.nextCFID !=0 AND tbcl.actiontype_id = $task_action_id AND ((tbcl.approved_status = 1 || tbcl.approved_status = '')
@@ -9210,7 +9220,7 @@ $data1 =  $query->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    $taskactionFilter = "AND tbcl.nextCFID !=0 AND tbcl.actiontype_id = $task_action_id AND ((tbcl.approved_status = 1 || tbcl.approved_status = '')
@@ -9325,7 +9335,7 @@ $data1 =  $query->result();
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
    $taskactionFilter = "AND tbcl.nextCFID !=0 AND tbcl.actiontype_id = $task_action_id AND ((tbcl.approved_status = 1 || tbcl.approved_status = '')
@@ -10365,7 +10375,7 @@ public function GetCompanyAfterLMAssignSameStatusSinceDays($userid,$sdate,$edate
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
 $mainCompanyFilter  = "AND init_call.mainbd = u1.user_id ";
@@ -10580,7 +10590,7 @@ public function GetCompanyAfterLMAssignSameStatusSinceDaysTaskLogsCount($userid,
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
 $mainCompanyFilter  = "AND init_call.mainbd = u1.user_id ";
@@ -10817,7 +10827,7 @@ public function GetCompanyAfterLMAssignSameStatusSinceDaysLists($userid,$sdate,$
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
 $mainCompanyFilter  = "AND init_call.mainbd = u1.user_id ";
@@ -11159,6 +11169,16 @@ DESC
 
 
 public function GetTravelExpenseTotalSumBySingleUser($uid){
+
+
+    $udata = $this->Menu_model->get_userbyid($uid);
+    $utype = $udata[0]->type_id;
+
+    $groupBy = "GROUP BY  c1.meetid";
+    if($utype == 16){
+         $groupBy = "GROUP BY  c1.tbl_task_id";
+    }
+
    
     $query=$this->db->query("SELECT 
     *
@@ -11169,7 +11189,7 @@ WHERE
         ( c1.verify = 1 AND  c1.admin_apr = 1)
         OR ( c1.verify = 0 AND  c1.admin_apr = 0)
         OR ( c1.verify = 1 AND  c1.admin_apr = 0)
-    ) GROUP BY  c1.meetid
+    ) $groupBy
     ");
     return $query->result();
 }
@@ -11492,7 +11512,7 @@ LEFT JOIN tblcallevents tblcarp
 -- LEFT JOIN proposal p1
 --        ON p1.init_id = init_call.id
 --        AND p1.apr IN (0,1)
---        AND CAST(p1.sdatet AS DATE) BETWEEN '2025-02-14' AND '2025-11-15'
+--        AND CAST(p1.sdatet AS DATE) BETWEEN '2026-04-01' AND '2025-11-15'
 
 LEFT JOIN (
    SELECT id, init_id, pbudgetme, user_id
@@ -11687,7 +11707,7 @@ LEFT JOIN tblcallevents tblcarp
 -- LEFT JOIN proposal p1
 --        ON p1.init_id = init_call.id
 --        AND p1.apr IN (0,1)
---        AND CAST(p1.sdatet AS DATE) BETWEEN '2025-02-14' AND '2025-11-15'
+--        AND CAST(p1.sdatet AS DATE) BETWEEN '2026-04-01' AND '2025-11-15'
 
 LEFT JOIN (
    SELECT id, init_id, pbudgetme, user_id
@@ -12125,7 +12145,7 @@ LEFT JOIN status s4 ON s4.id = tblcarp.nstatus_id
 -- LEFT JOIN proposal p1
 --        ON p1.init_id = init_call.id
 --        AND p1.apr IN (0,1)
---        AND CAST(p1.sdatet AS DATE) BETWEEN '2025-02-14' AND '2025-11-15'
+--        AND CAST(p1.sdatet AS DATE) BETWEEN '2026-04-01' AND '2025-11-15'
 LEFT JOIN (
    SELECT id, init_id, pbudgetme, sdatet, user_id
    FROM proposal
@@ -12397,7 +12417,7 @@ LEFT JOIN status s4 ON s4.id = tblcarp.nstatus_id
 -- LEFT JOIN proposal p1
 --        ON p1.init_id = init_call.id
 --        AND p1.apr IN (0,1)
---        AND CAST(p1.sdatet AS DATE) BETWEEN '2025-02-14' AND '2025-11-15'
+--        AND CAST(p1.sdatet AS DATE) BETWEEN '2026-04-01' AND '2025-11-15'
 LEFT JOIN (
    SELECT id, init_id, pbudgetme,sdatet,tid as ptask_id, id as proposal_id, user_id as puser_id
    FROM proposal
@@ -12846,7 +12866,7 @@ public function GetFunnelDetailsWithClusterIDMeetingDetails($userid,$mtypes,$clu
     $curFinancialDate       = $this->Menu_model->getFinancialYearRange();
     $start_financial_date   = $curFinancialDate['start_date'];
     $end_financial_date     = $curFinancialDate['end_date'];
-    $start_financial_date   = '2025-02-14';
+    $start_financial_date   = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -14000,7 +14020,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetails($tarFilter,$user
     $curFinancialDate           = $this->Menu_model->getFinancialYearRange();
     $start_financial_date       = $curFinancialDate['start_date'];
     $end_financial_date         = $curFinancialDate['end_date'];
-    $start_financial_date       = '2025-02-14';
+    $start_financial_date       = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData                     = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -14924,7 +14944,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManager($tarF
     $curFinancialDate           = $this->Menu_model->getFinancialYearRange();
     $start_financial_date       = $curFinancialDate['start_date'];
     $end_financial_date         = $curFinancialDate['end_date'];
-    $start_financial_date       = '2025-02-14';
+    $start_financial_date       = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData                     = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -15259,7 +15279,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereP
     $curFinancialDate           = $this->Menu_model->getFinancialYearRange();
     $start_financial_date       = $curFinancialDate['start_date'];
     $end_financial_date         = $curFinancialDate['end_date'];
-    $start_financial_date       = '2025-02-14';
+    $start_financial_date       = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData                     = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -15267,7 +15287,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereP
     $groupfilter                = '';
     $userActiveStatus           = " AND u1.status = 'active'";
 
-    $sdate                      = '2025-02-14';
+    $sdate                      = '2026-04-01';
     $edate                      = date("Y-m-d");
  
     $whereConditions = '';
@@ -15568,7 +15588,7 @@ public function MoreThenNDaysNoActivityDoneBYUserLineManagerWhereProposalSent($u
     $cfData = $this->Menu_model->getCurrentFinancialYearAndQuarter();
     $currentQuarter = "Q".$cfData['quarter'];
 
-    $sdate = '2025-02-14';
+    $sdate = '2026-04-01';
     $edate = date("Y-m-d");
 
 $totalFunnelQuery = $this->db->query("SELECT
@@ -16365,7 +16385,7 @@ public function MoreThenNDaysNoActivityDoneBYUserLineManagerWhereRPMeetingDone($
     $cfData = $this->Menu_model->getCurrentFinancialYearAndQuarter();
     $currentQuarter = "Q".$cfData['quarter'];
 
-    $sdate = '2025-02-14';
+    $sdate = '2026-04-01';
     $edate = date("Y-m-d");
 
 $totalFunnelQuery = $this->db->query("SELECT
@@ -17208,7 +17228,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereR
     $curFinancialDate           = $this->Menu_model->getFinancialYearRange();
     $start_financial_date       = $curFinancialDate['start_date'];
     $end_financial_date         = $curFinancialDate['end_date'];
-    $start_financial_date       = '2025-02-14';
+    $start_financial_date       = '2026-04-01';
     $start_financial_date_year  = new DateTime($start_financial_date);
     $year                       = $start_financial_date_year->format('Y');
     $cfData                     = $this->Menu_model->getCurrentFinancialYearAndQuarter();
@@ -17216,7 +17236,7 @@ public function MoreThenNDaysNoActivityDoneBYUserCompanyDetailsLineManagerWhereR
     $groupfilter                = '';
     $userActiveStatus           = " AND u1.status = 'active'";
 
-    $sdate                      = '2025-02-14';
+    $sdate                      = '2026-04-01';
     $edate                      = date("Y-m-d");
  
     $whereConditions = '';
