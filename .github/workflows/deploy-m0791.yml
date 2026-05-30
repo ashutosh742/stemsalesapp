@@ -1,0 +1,130 @@
+name: Deploy m079.1 hotpatch to staging
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STEM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.STEM_SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Upload DashboardHeader.php
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STEM_SSH_HOST }}
+          username: ${{ secrets.STEM_SSH_USER }}
+          key: ${{ secrets.STEM_SSH_PRIVATE_KEY }}
+          source: "application/controllers/DashboardHeader.php"
+          target: "/home/selfstaging/public_html/"
+          strip_components: 0
+          overwrite: true
+
+      - name: Upload AnayaBriefing.php
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STEM_SSH_HOST }}
+          username: ${{ secrets.STEM_SSH_USER }}
+          key: ${{ secrets.STEM_SSH_PRIVATE_KEY }}
+          source: "application/controllers/AnayaBriefing.php"
+          target: "/home/selfstaging/public_html/"
+          strip_components: 0
+          overwrite: true
+
+      - name: Patch routes.php idempotently and verify
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STEM_SSH_HOST }}
+          username: ${{ secrets.STEM_SSH_USER }}
+          key: ${{ secrets.STEM_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            APP_ROOT=/home/selfstaging/public_html
+            ROUTES=$APP_ROOT/application/config/routes.php
+
+            echo "=== File permissions ==="
+            chown -R selfstaging:selfstaging $APP_ROOT/application/controllers/DashboardHeader.php $APP_ROOT/application/controllers/AnayaBriefing.php || true
+            chmod 644 $APP_ROOT/application/controllers/DashboardHeader.php $APP_ROOT/application/controllers/AnayaBriefing.php
+            ls -la $APP_ROOT/application/controllers/DashboardHeader.php $APP_ROOT/application/controllers/AnayaBriefing.php
+
+            echo "=== Backing up routes.php ==="
+            cp $ROUTES $ROUTES.bak.$(date +%s)
+
+            echo "=== Checking for existing m079.1 routes ==="
+            if grep -q "api/dashboard/header_counts" $ROUTES; then
+              echo "Routes already present, skipping insert."
+            else
+              echo "Inserting 5 routes above default_controller line."
+              python3 <<'PY'
+            path = "/home/selfstaging/public_html/application/config/routes.php"
+            with open(path) as f:
+                lines = f.readlines()
+            insert_block = [
+                "// m079.1 hotpatch routes\n",
+                "$route['api/dashboard/header_counts']        = 'DashboardHeader/header_counts';\n",
+                "$route['api/dashboard/header_counts/probe']  = 'DashboardHeader/probe';\n",
+                "$route['api/anaya/briefing']                 = 'AnayaBriefing/briefing';\n",
+                "$route['api/anaya/leads_to_push']            = 'AnayaBriefing/leads_to_push';\n",
+                "$route['api/anaya/probe']                    = 'AnayaBriefing/probe';\n",
+                "\n",
+            ]
+            out = []
+            inserted = False
+            for ln in lines:
+                if not inserted and "default_controller" in ln:
+                    out.extend(insert_block)
+                    inserted = True
+                out.append(ln)
+            if not inserted:
+                # fallback - append at end
+                out.append("\n")
+                out.extend(insert_block)
+            with open(path, "w") as f:
+                f.writelines(out)
+            print("Routes inserted." if inserted else "Routes appended at EOF.")
+            PY
+            fi
+
+            echo "=== Final routes grep ==="
+            grep -n "header_counts\|anaya" $ROUTES || true
+
+            echo "=== Clear CI cache if exists ==="
+            rm -f $APP_ROOT/application/cache/*.cache 2>/dev/null || true
+
+      - name: Smoke check endpoints
+        run: |
+          BEARER="${{ secrets.STEM_DIGEST_TOKEN }}"
+          BASE="https://selfstagingstemapp.in"
+          fail=0
+
+          check() {
+            local url="$1"
+            local label="$2"
+            echo "--- $label ---"
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' -H "Authorization: Bearer $BEARER" "$url" || echo "000")
+            echo "HTTP $code"
+            head -c 400 /tmp/body
+            echo
+            if [ "$code" != "200" ]; then
+              fail=1
+            fi
+          }
+
+          check "$BASE/api/dashboard/header_counts/probe" "Dashboard header probe"
+          check "$BASE/api/anaya/probe" "Anaya probe"
+          check "$BASE/api/dashboard/header_counts?uid=426" "Dashboard counts uid=426 Rimly"
+          check "$BASE/api/anaya/briefing?uid=426" "Anaya briefing uid=426 Rimly"
+
+          if [ $fail -ne 0 ]; then
+            echo "SMOKE FAILED"
+            exit 1
+          fi
+          echo "All 4 smoke checks passed."
