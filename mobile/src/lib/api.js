@@ -15,10 +15,10 @@ import { Platform } from 'react-native';
 // ─── Config ───────────────────────────────────────────────────────
 const ENV = {
   prod:    { base: 'https://stemapp.in',          name: 'production'  },
-  staging: { base: 'https://staging.stemapp.in',  name: 'staging'     },
+  staging: { base: 'https://stagingstemopp.in',   name: 'staging'     },
   dev:     { base: Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080', name: 'dev' },
 };
-export const ACTIVE_ENV = ENV.prod;  // change for staging/dev
+export const ACTIVE_ENV = ENV.staging;  // change for staging/dev
 const BASE = ACTIVE_ENV.base;
 
 // ─── Token storage ────────────────────────────────────────────────
