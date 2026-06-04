@@ -2,14 +2,25 @@
   "expo": {
     "name": "STEM CRMApp",
     "slug": "stem-crmapp",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
       "backgroundColor": "#090A0F"
     },
-    "ios": { "supportsTablet": true },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.stemlearning.crm"
+    },
     "android": {
+      "package": "in.stemlearning.crm",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": { "backgroundColor": "#090A0F" }
     }
   }
