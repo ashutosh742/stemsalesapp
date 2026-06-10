@@ -23,3 +23,7 @@ uploads/
 application/cache/
 application/logs/
 application/sessions/
+
+# Never commit live secrets
+.env
+*.bak_secrets_*
