@@ -658,6 +658,11 @@ class Mobile_write_api extends CI_Controller {
             'status_id'          => (int)$this->_post('status_id', 0),
             'updateddate'        => $now,
             'updation_data_type' => 'submit',
+            // EXEC-PARITY 20260610: persist the >2 min late-update reason
+            // (mirrors Menu::submit_task1 late_remarks_message) and stamp the
+            // actual close-time (mirrors the web 'Meeting Closed at' closem).
+            'late_remarks_message' => (string)$this->_post('late_remarks_message', ''),
+            'closem'             => date('H:i:s'),
         ];
         $this->db->where('id', $tid)->update('tblcallevents', $upd);
 
@@ -913,11 +918,13 @@ class Mobile_write_api extends CI_Controller {
             case 'approve_proposal':
             case 'approve_mom':
             case 'approve_planner':
+            case 'assign_planned_task':
                 $allow = $is_pst || $is_cm || $is_sc || $is_acm
                       || $is_ash || $is_rm || $is_admin_lane;
                 break;
             case 'submit_handover':
             case 'submit_bd_request':
+            case 'submit_planner_approval':
                 $allow = $is_bd || $is_acm || $is_admin_lane;
                 break;
             default:
@@ -936,7 +943,7 @@ class Mobile_write_api extends CI_Controller {
         $DAY_GATED_ACTIONS = array(
             'create_lead','plan_task','submit_task','barge','research',
             'join_meeting','write_mom','upload_proposal',
-            'submit_handover','submit_bd_request'
+            'submit_handover','submit_bd_request','submit_planner_approval'
         );
         $is_field_user = ($t === 3 || $t === 24); // BD or ACM act-as-BD
         if ($is_field_user && in_array($action, $DAY_GATED_ACTIONS, true)) {
@@ -2570,5 +2577,559 @@ class Mobile_write_api extends CI_Controller {
         return $this->db->insert_id();
     }
 
+
+
+    /**
+     * POST /api/task/plan_delete  (ADDITIVE - Area D, 2026-06-10)
+     *
+     * Deletes a single PLANNED tblcallevents cell that the authed user owns.
+     * Wired to the planner's WFFO conflict modal "Remove" action: when a BD
+     * switches to a mode that blocks physical activities, each conflicting
+     * planned cell must be removed from the SERVER ledger, not just the local
+     * grid. Previously the mobile modal only filtered the cell out of React
+     * state, so the planned tblcallevents row survived and the next planner
+     * load re-showed the conflict.
+     *
+     * SAFETY: only deletes a row that
+     *   - belongs to the authed uid (user_id = uid), AND
+     *   - is still a plan row (plan = 1) that has NOT been executed/submitted
+     *     (updation_data_type = 'plan'; actontaken is not yet 'yes').
+     * This prevents a BD from deleting a submitted/closed task or another
+     * user's task. Required: uid, task_id. Returns {ok, deleted_task_id}.
+     */
+    public function delete_plan_task() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'plan_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','task_id']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $uid     = (int)$actor['uid'];
+        $task_id = (int)$this->_post('task_id');
+        if ($task_id <= 0) return $this->_deny(400, 'invalid task_id');
+
+        $row = $this->db->query(
+            "SELECT id, user_id, plan, updation_data_type, actontaken FROM tblcallevents WHERE id = ? LIMIT 1",
+            [$task_id]
+        )->row_array();
+        if (!$row) return $this->_deny(404, 'unknown task_id');
+
+        if ((int)$row['user_id'] !== $uid) {
+            return $this->_deny(403, 'not your task');
+        }
+        $is_plan      = ((int)$row['plan'] === 1) || (strcasecmp((string)$row['updation_data_type'], 'plan') === 0);
+        $already_done = (strcasecmp((string)$row['actontaken'], 'yes') === 0);
+        if (!$is_plan || $already_done) {
+            return $this->_deny(409, 'task is not a removable plan cell');
+        }
+
+        $this->db->trans_start();
+        $this->db->where('id', $task_id)->where('user_id', $uid)->delete('tblcallevents');
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) {
+            $err = $this->db->error();
+            return $this->_deny(500, 'plan delete failed', $err);
+        }
+
+        return $this->_ok(['deleted_task_id' => $task_id]);
+    }
+
+
+    /* ===================== POST /api/planner/submit_for_approval =====================
+     * STEP 1 of the approval chain (approvalchain_20260610). Mirrors
+     * Menu::RequestForPlannerApproval EXACTLY: inserts a PENDING planner_approved
+     * row {user_id, request_date, request_type:"Planner Approval", request_message},
+     * de-duped on (user_id, request_date) so a BD cannot double-submit the same day.
+     * The authed BD's uid is the actor (never a posted bd_id). Additive only;
+     * production Menu::RequestForPlannerApproval untouched.
+     *
+     * Required POST: uid, request_date (YYYY-MM-DD)
+     * Optional: request_message
+     *
+     * Returns: { ok, planner_id, status:"pending", duplicate:false }
+     * If already submitted for that date: { ok, planner_id, status, duplicate:true }
+     */
+    public function submit_planner_approval() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_planner_approval');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','request_date']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $uid  = (int)$actor['uid'];
+        $rdate = (string)$this->_post('request_date');
+        if (!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $rdate)) {
+            return $this->_deny(400, 'request_date must be YYYY-MM-DD');
+        }
+        $rmsg = (string)$this->_post('request_message', 'Planner submitted for approval');
+
+        // Dedupe exactly like Menu::RequestForPlannerApproval (user_id + request_date).
+        $existing = $this->db->query(
+            "SELECT id, approved_status FROM planner_approved WHERE user_id = ? AND request_date = ? ORDER BY id DESC LIMIT 1",
+            [$uid, $rdate]
+        )->row_array();
+        if ($existing) {
+            $st = $existing['approved_status'];
+            $stname = ($st === null || (int)$st === 0) ? 'pending' : ((int)$st === 1 ? 'approved' : 'rejected');
+            return $this->_ok([
+                'planner_id' => (int)$existing['id'],
+                'status'     => $stname,
+                'duplicate'  => true,
+            ]);
+        }
+
+        $this->db->trans_start();
+        $pid = $this->_next_id('planner_approved');
+        $this->db->insert('planner_approved', [
+            'id'              => $pid,
+            'user_id'         => $uid,
+            'request_date'    => $rdate,
+            'request_type'    => 'Planner Approval',
+            'request_message' => $rmsg,
+            // approved_status left NULL => pending (matches production default)
+        ]);
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) {
+            return $this->_deny(500, 'planner_approved insert failed', $this->db->error());
+        }
+
+        return $this->_ok([
+            'planner_id' => $pid,
+            'status'     => 'pending',
+            'duplicate'  => false,
+        ]);
+    }
+
+
+    /* ===================== POST /api/planner/assign_task =====================
+     * STEP 4 of the approval chain (approvalchain_20260610): a line manager /
+     * CM (role type 15/13/4/19-23/admin) (re)assigns an EXISTING planned task
+     * row in the REAL ledger (tblcallevents) down to a target BD. Mirrors the
+     * production "Assign Task By <name>" write semantics in Menu.php: sets
+     * assignedto_id = target BD, assignedto_by = the manager, approved_status=1,
+     * approved_by = the manager, and stamps selectby/comments. Additive only;
+     * production assign paths untouched. The manager is NOT day-gated.
+     *
+     * Required POST: uid (the manager), task_id, target_bd_uid
+     * Returns: { ok, task_id, target_bd_uid, assigned_by, prev_bd_uid }
+     */
+    public function assign_planned_task() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'assign_planned_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        // target_bd_uid is required in BOTH modes.
+        $miss = $this->_require_post(['uid','target_bd_uid']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $mgr_uid   = (int)$actor['uid'];
+        $task_id   = (int)$this->_post('task_id', 0);
+        $target_bd = (int)$this->_post('target_bd_uid');
+        if ($target_bd <= 0) return $this->_deny(400, 'target_bd_uid must be a positive integer');
+
+        // Target BD must exist and be an active field user (BD/ACM).
+        $bd = $this->db->query(
+            "SELECT uid, name, type_id, active FROM user WHERE uid = ? LIMIT 1",
+            [$target_bd]
+        )->row_array();
+        if (!$bd || (int)$bd['active'] !== 1) return $this->_deny(404, 'target_bd_uid not found or inactive');
+        if (!in_array((int)$bd['type_id'], [3, 24], true)) {
+            return $this->_deny(409, 'target_bd_uid is not a field user (BD/ACM)');
+        }
+
+        $now      = date('Y-m-d H:i:s');
+        $mgr_name = isset($actor['name']) ? (string)$actor['name'] : ('uid ' . $mgr_uid);
+
+        // ----- CREATE MODE: no task_id, build a brand-new assigned plan row -----
+        // The manager picks a lead + action + purpose + time and the task is
+        // INSERTED into tblcallevents owned by the target BD, pre-approved.
+        if ($task_id <= 0) {
+            $miss2 = $this->_require_post(['cid_id','actiontype_id','purpose_id','appointmentdatetime']);
+            if ($miss2) return $this->_deny(400, 'create mode missing fields: ' . implode(',', $miss2));
+
+            $cid_id = (int)$this->_post('cid_id');
+            $lead = $this->db->query("SELECT id FROM init_call WHERE id = ? LIMIT 1", [$cid_id])->row_array();
+            if (!$lead) return $this->_deny(400, 'unknown cid_id');
+
+            $row = $this->_canonical_event_row([
+                'event'              => (string)$this->_post('event', ''),
+                'meeting_type'       => (string)$this->_post('meeting_type', 'NA'),
+                'appointmentdatetime'=> (string)$this->_post('appointmentdatetime'),
+                'actiontype_id'      => (int)$this->_post('actiontype_id'),
+                'assignedto_id'      => $target_bd,
+                'cid_id'             => $cid_id,
+                'purpose_id'         => (int)$this->_post('purpose_id'),
+                'remarks'            => (string)$this->_post('remarks', ''),
+                'status_id'          => (int)$this->_post('status_id', 0),
+                'targetstatus'       => (int)$this->_post('targetstatus', 0),
+                'user_id'            => $target_bd,
+                'updation_data_type' => 'plan',
+                'plan'               => 1,
+                'assignedto_by'      => $mgr_uid,
+                'approved_status'    => 1,
+                'approved_by'        => $mgr_uid,
+                'approved_date'      => $now,
+                'selectby'           => 'Assign Task By ' . $mgr_name,
+                'comments'           => 'Assign Task By ' . $mgr_name,
+            ]);
+            $this->db->trans_start();
+            $new_id = $this->_next_id('tblcallevents');
+            $row['id'] = $new_id;
+            $this->db->insert('tblcallevents', $row);
+            $this->db->trans_complete();
+            if (!$this->db->trans_status() || !$new_id) {
+                return $this->_deny(500, 'assigned task insert failed');
+            }
+            return $this->_ok([
+                'task_id'       => $new_id,
+                'target_bd_uid' => $target_bd,
+                'assigned_by'   => $mgr_uid,
+                'mode'          => 'create',
+            ]);
+        }
+
+        // ----- REASSIGN MODE: task_id present, move an existing planned row -----
+        // The task row must exist and be a PLANNED, not-yet-executed row.
+        $row = $this->db->query(
+            "SELECT id, assignedto_id, user_id, actontaken, plan, updation_data_type" .
+            " FROM tblcallevents WHERE id = ? LIMIT 1",
+            [$task_id]
+        )->row_array();
+        if (!$row) return $this->_deny(404, 'unknown task_id');
+        $is_plan = ((int)$row['plan'] === 1) || ($row['updation_data_type'] === 'plan');
+        $executed = (strtolower((string)$row['actontaken']) === 'yes');
+        if (!$is_plan || $executed) {
+            return $this->_deny(409, 'task is not a re-assignable planned row');
+        }
+
+        $prev_bd = (int)$row['assignedto_id'];
+
+        $this->db->where('id', $task_id)->update('tblcallevents', [
+            'assignedto_id'   => $target_bd,
+            'user_id'         => $target_bd,
+            'assignedto_by'   => $mgr_uid,
+            'approved_status' => 1,
+            'approved_by'     => $mgr_uid,
+            'approved_date'   => $now,
+            'selectby'        => 'Assign Task By ' . $mgr_name,
+            'comments'        => 'Assign Task By ' . $mgr_name,
+        ]);
+        if ($this->db->affected_rows() < 0) return $this->_deny(500, 'task reassign failed');
+
+        return $this->_ok([
+            'task_id'       => $task_id,
+            'target_bd_uid' => $target_bd,
+            'assigned_by'   => $mgr_uid,
+            'prev_bd_uid'   => $prev_bd,
+        ]);
+    }
+
+
+    /* ====================================================================
+     * EXEC-PARITY 20260610 (additive)
+     *
+     * Mirrors production Menu::taskExecution action-type-driven execution:
+     *   - getViewFormData($actiontype_id) reads the main_task table
+     *     (the per-action stage schema, 8 stages for 23/24, 1 for 25, default
+     *     view for 26).
+     *   - SchoolInauguratiOnSubmit / SchoolVisitBySalesSubmit / ... write EACH
+     *     stage to task_execution_details and photos to tblcallevents_attachments,
+     *     then finalize on tblcallevents.
+     *   - the >2 min late-update reason (late_remarks_message) and the >5 min
+     *     appointment-delay reason (UpdatetaskDelayOrBeforeRemarks) live in the
+     *     web addpop.php; the server columns are tblcallevents.late_remarks_message
+     *     and tblcallevents.closem.
+     *
+     * These endpoints are READ-ONLY schema + ADDITIVE per-stage writers. They do
+     * NOT replace submit_task; the action-type screen posts each stage + photo
+     * here, then calls submit_task to finalize (same as production).
+     * ==================================================================== */
+
+    /**
+     * GET /api/task/action_schema?actiontype_id=<id>[&task_id=<id>]
+     * READ-ONLY mirror of Menu_model::getViewFormData($actiontype_id).
+     * Returns the per-action stage list from main_task plus, when task_id is
+     * given, the delay context the web view computes client-side:
+     *   initiateddt, appointmentdatetime, server_now and the derived
+     *   late_update_minutes (now - initiateddt) and appointment_delay_minutes
+     *   (now - appointmentdatetime), with the 2-min / 5-min thresholds.
+     * Nothing is hardcoded: the stages come straight from main_task.
+     */
+    public function task_action_schema() {
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $aid = (int)(isset($_GET['actiontype_id']) ? $_GET['actiontype_id'] : $this->_post('actiontype_id', 0));
+        if ($aid <= 0) return $this->_deny(400, 'actiontype_id required');
+
+        // Mirror getViewFormData: SELECT * FROM main_task WHERE tasktype = aid
+        $rows = $this->db->query("SELECT * FROM main_task WHERE tasktype = ? ORDER BY id ASC", [$aid])->result_array();
+
+        $stages = array();
+        foreach ($rows as $r) {
+            // derive the field type from the type_* flags (exactly the columns
+            // the web stage form reads)
+            $type = 'text';
+            if ((int)$r['type_file'] == 1)            $type = 'file';
+            else if ((int)$r['type_textarea'] == 1)   $type = 'textarea';
+            else if ((int)$r['type_select'] == 1)     $type = 'select';
+            else if ((int)$r['type_radiobutton'] == 1)$type = 'radio';
+            else if ((int)$r['type_checkbox'] == 1)   $type = 'checkbox';
+            else if ((int)$r['type_date'] == 1)       $type = 'date';
+            else if ((int)$r['type_rating'] == 1)     $type = 'rating';
+            else if ((int)$r['type_text'] == 1)       $type = 'text';
+            else                                      $type = 'remark';
+            $stages[] = array(
+                'main_task_id' => (int)$r['id'],
+                'taskname'     => (string)$r['taskname'],
+                'taskdetails'  => (string)$r['taskdetails'],
+                'taskaction'   => (string)$r['taskaction'],
+                'field_type'   => $type,
+                'is_photo'     => ((int)$r['type_file'] == 1),
+                'tasktime'     => (string)$r['tasktime'],
+            );
+        }
+
+        // Production view-name map (Menu::taskExecution)
+        $viewmap = array(23 => 'SchoolInaugurationView', 24 => 'SchoolVisitView',
+                         25 => 'SchoolIndentification', 26 => 'CallOnSchool');
+        $viewname = isset($viewmap[$aid]) ? $viewmap[$aid] : 'default';
+
+        $out = array(
+            'actiontype_id' => $aid,
+            'view_name'     => $viewname,
+            'staged'        => (count($stages) > 0),
+            'stages'        => $stages,
+        );
+
+        // Optional delay context for a specific task
+        $tid = (int)(isset($_GET['task_id']) ? $_GET['task_id'] : $this->_post('task_id', 0));
+        if ($tid > 0) {
+            $t = $this->db->query("SELECT id, initiateddt, appointmentdatetime, closem FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+            if ($t) {
+                $now = time();
+                $late_min = null; $appt_delay_min = null;
+                if (!empty($t['initiateddt']) && $t['initiateddt'] !== '0000-00-00 00:00:00') {
+                    $late_min = (int)floor(($now - strtotime($t['initiateddt'])) / 60);
+                }
+                if (!empty($t['appointmentdatetime']) && $t['appointmentdatetime'] !== '0000-00-00 00:00:00') {
+                    $appt_delay_min = (int)floor(($now - strtotime($t['appointmentdatetime'])) / 60);
+                }
+                $out['delay_context'] = array(
+                    'initiateddt'              => $t['initiateddt'],
+                    'appointmentdatetime'      => $t['appointmentdatetime'],
+                    'closem'                   => $t['closem'],
+                    'server_now'               => date('Y-m-d H:i:s', $now),
+                    'late_update_minutes'      => $late_min,
+                    'late_update_required'     => ($late_min !== null && $late_min > 2),
+                    'late_threshold_minutes'   => 2,
+                    'appointment_delay_minutes'=> $appt_delay_min,
+                    'appointment_delay_required'=> ($appt_delay_min !== null && $appt_delay_min > 5),
+                    'appointment_threshold_minutes' => 5,
+                );
+            }
+        }
+        return $this->_ok($out);
+    }
+
+    /**
+     * POST /api/task/stage_write
+     * Required: uid, task_id, main_task_id
+     * Optional: task_response (default "Success"), tbe_attachment_id (default 0),
+     *           remark, stamp_initiated (1 to stamp tblcallevents.initiateddt for
+     *           the first stage, mirroring "if main_task_id == first stage").
+     * Mirrors the per-stage INSERT into task_execution_details that the web
+     * *Submit methods perform. ADDITIVE: does not finalize the task.
+     */
+    public function stage_write() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','task_id','main_task_id']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $uid = (int)$actor['uid'];
+        $tid = (int)$this->_post('task_id');
+        $mtid = (int)$this->_post('main_task_id');
+
+        $task = $this->db->query("SELECT id, actiontype_id, assignedto_id, user_id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        if (!$task) return $this->_deny(400, 'unknown task_id');
+
+        // main_task row must exist and belong to this action type (parity guard).
+        $mt = $this->db->query("SELECT id, tasktype FROM main_task WHERE id = ? LIMIT 1", [$mtid])->row_array();
+        if (!$mt) return $this->_deny(400, 'unknown main_task_id');
+        if ((int)$mt['tasktype'] !== (int)$task['actiontype_id']) {
+            return $this->_deny(409, 'main_task_id does not belong to this task action type');
+        }
+
+        $resp = (string)$this->_post('task_response', 'Success');
+        $resp = str_replace("'", '', $resp);
+        $att_id = (int)$this->_post('tbe_attachment_id', 0);
+        $remark = (string)$this->_post('remark', '');
+        $now = date('Y-m-d H:i:s');
+
+        $this->db->trans_start();
+        $row = array(
+            'main_task_id'      => $mtid,
+            'task_response'     => $resp,
+            'tbe_attachment_id' => $att_id,
+            'remark'            => $remark,
+            'tbe_id'            => $tid,
+            'performed_by'      => $uid,
+            'updated_at'        => $now,
+            'status'            => 1,
+        );
+        $row['id'] = $this->_next_id('task_execution_details');
+        $this->db->insert('task_execution_details', $row);
+        $detail_id = $row['id'];
+
+        // Mirror "if first stage stamp initiateddt" (e.g. main_task_id 1 for
+        // action 23, 77 for action 24). Driven by the explicit flag the screen
+        // sends, so nothing is hardcoded per action.
+        if ((int)$this->_post('stamp_initiated', 0) === 1) {
+            $this->db->where('id', $tid)->update('tblcallevents', array('initiateddt' => $now));
+        }
+
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) return $this->_deny(500, 'stage write failed', $this->db->error());
+
+        return $this->_ok(array(
+            'task_execution_id' => $detail_id,
+            'task_id'           => $tid,
+            'main_task_id'      => $mtid,
+            'performed_by'      => $uid,
+        ));
+    }
+
+    /**
+     * POST /api/task/stage_attachment
+     * Required: uid, task_id, main_task_id, attachment_link
+     * Optional: location, remark, task_response (default "Success")
+     * Mirrors the web *Submit photo path: INSERT into tblcallevents_attachments
+     * then INSERT a linked task_execution_details row (tbe_attachment_id = the
+     * new attachment id). The mobile screen uploads the file via the existing
+     * /api/task/upload_attachment, then posts the returned link here.
+     */
+    public function stage_attachment() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','task_id','main_task_id','attachment_link']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $uid = (int)$actor['uid'];
+        $tid = (int)$this->_post('task_id');
+        $mtid = (int)$this->_post('main_task_id');
+        $link = (string)$this->_post('attachment_link');
+        $loc  = (string)$this->_post('location', '');
+        $remark = (string)$this->_post('remark', '');
+        $resp = str_replace("'", '', (string)$this->_post('task_response', 'Success'));
+        $now = date('Y-m-d H:i:s');
+
+        $task = $this->db->query("SELECT id, actiontype_id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        if (!$task) return $this->_deny(400, 'unknown task_id');
+        $mt = $this->db->query("SELECT id, tasktype FROM main_task WHERE id = ? LIMIT 1", [$mtid])->row_array();
+        if (!$mt) return $this->_deny(400, 'unknown main_task_id');
+        if ((int)$mt['tasktype'] !== (int)$task['actiontype_id']) {
+            return $this->_deny(409, 'main_task_id does not belong to this task action type');
+        }
+
+        $this->db->trans_start();
+        // 1) attachment row
+        $att = array(
+            'task_id'         => $tid,
+            'main_task_id'    => $mtid,
+            'attachment_link' => $link,
+            'location'        => $loc,
+            'remark'          => $remark,
+            'user_id'         => $uid,
+            'status'          => 1,
+            'created_at'      => $now,
+            'updated_at'      => $now,
+        );
+        $att['id'] = $this->_next_id('tblcallevents_attachments');
+        $this->db->insert('tblcallevents_attachments', $att);
+        $att_id = $att['id'];
+
+        // 2) linked task_execution_details row (mirrors web)
+        $det = array(
+            'main_task_id'      => $mtid,
+            'task_response'     => $resp,
+            'tbe_attachment_id' => $att_id,
+            'remark'            => $remark,
+            'tbe_id'            => $tid,
+            'performed_by'      => $uid,
+            'updated_at'        => $now,
+            'status'            => 1,
+        );
+        $det['id'] = $this->_next_id('task_execution_details');
+        $this->db->insert('task_execution_details', $det);
+        $det_id = $det['id'];
+
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) return $this->_deny(500, 'stage attachment failed', $this->db->error());
+
+        return $this->_ok(array(
+            'attachment_id'     => $att_id,
+            'task_execution_id' => $det_id,
+            'task_id'           => $tid,
+            'main_task_id'      => $mtid,
+        ));
+    }
+
+    /**
+     * POST /api/task/delay_remarks
+     * Required: uid, task_id, delay_remarks
+     * Mirrors Menu::UpdatetaskDelayOrBeforeRemarks - persists the appointment
+     * (>5 min) / late-update (>2 min) reason to tblcallevents.late_remarks_message.
+     * Min 5 chars (matches the web client guard).
+     */
+    public function delay_remarks() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','task_id','delay_remarks']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $tid = (int)$this->_post('task_id');
+        $reason = trim((string)$this->_post('delay_remarks'));
+        $reason = str_replace("'", '', $reason);
+        if (strlen($reason) < 5) {
+            return $this->_deny(422, 'delay_remarks_required', array(
+                'message' => 'Please enter a valid remark with at least 5 characters.',
+                'field'   => 'delay_remarks',
+                'min_len' => 5,
+            ));
+        }
+        $task = $this->db->query("SELECT id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        if (!$task) return $this->_deny(400, 'unknown task_id');
+
+        $this->db->where('id', $tid)->update('tblcallevents', array('late_remarks_message' => $reason));
+        return $this->_ok(array('task_id' => $tid, 'late_remarks_message' => $reason));
+    }
 
 }

@@ -587,3 +587,40 @@ if (file_exists(__DIR__ . '/routes_schema_guard_20260608.php')) {
     try { include(__DIR__ . '/routes_schema_guard_20260608.php'); }
     catch (Throwable $_ex_sg) { log_message('error', 'routes_schema_guard: ' . $_ex_sg->getMessage()); }
 }
+
+/* === dashboard summary mirror 2026-06-10 (additive, read-only, very last include) === */
+if (file_exists(__DIR__ . '/routes_dashboard_summary_20260610.php')) {
+    try { include(__DIR__ . '/routes_dashboard_summary_20260610.php'); }
+    catch (Throwable $_ex_ds) { log_message('error', 'routes_dashboard_summary: ' . $_ex_ds->getMessage()); }
+}
+
+/* === status transition mirror 2026-06-10 (additive, read-only, very last include) === */
+if (file_exists(__DIR__ . '/routes_status_transitions_20260610.php')) {
+    try { include(__DIR__ . '/routes_status_transitions_20260610.php'); }
+    catch (Throwable $_ex_st) { log_message('error', 'routes_status_transitions: ' . $_ex_st->getMessage()); }
+}
+
+/* === plan-cell delete 2026-06-10 (additive, Area D, very last include) === */
+if (file_exists(__DIR__ . '/routes_plan_delete_20260610.php')) {
+    try { include(__DIR__ . '/routes_plan_delete_20260610.php'); }
+    catch (Throwable $_ex_pd) { log_message('error', 'routes_plan_delete: ' . $_ex_pd->getMessage()); }
+}
+
+/* === planner submit-for-approval 2026-06-10 (additive, approval chain Step 1, very last include) === */
+if (file_exists(__DIR__ . '/routes_planner_request_approval_20260610.php')) {
+    try { include(__DIR__ . '/routes_planner_request_approval_20260610.php'); }
+    catch (Throwable $_ex_pra) { log_message('error', 'routes_planner_request_approval: ' . $_ex_pra->getMessage()); }
+}
+
+/* === planner manager task-assign 2026-06-10 (additive, approval chain Step 4, very last include) === */
+if (file_exists(__DIR__ . '/routes_planner_assign_task_20260610.php')) {
+    try { include(__DIR__ . '/routes_planner_assign_task_20260610.php'); }
+    catch (Throwable $_ex_pat) { log_message('error', 'routes_planner_assign_task: ' . $_ex_pat->getMessage()); }
+}
+
+
+/* === task execution parity 2026-06-10 (additive, action-type schema + per-stage writers + delay remarks, very last include) === */
+if (file_exists(__DIR__ . '/routes_exec_parity_20260610.php')) {
+    try { include(__DIR__ . '/routes_exec_parity_20260610.php'); }
+    catch (Throwable $_ex_ep) { log_message('error', 'routes_exec_parity: ' . $_ex_ep->getMessage()); }
+}
