@@ -25,6 +25,8 @@ class RmUpsell extends CI_Controller {
     }
 
     private function _check_bearer() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization', TRUE);
         $tok = getenv('STEM_DIGEST_TOKEN');
         if (empty($tok)) return;

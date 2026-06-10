@@ -13,6 +13,7 @@ class Mobile_stub_real extends CI_Controller {
 
     private $uid      = null;
     private $_raw_body = null;
+    private $role     = ''; // rimlyproof_taskscope_20260609
 
     // ----------------------------------------------------------------
     // Helpers — verbatim copies from Mobile_stub_api
@@ -89,7 +90,26 @@ class Mobile_stub_real extends CI_Controller {
             exit;
         }
         $this->uid = $uid;
+        // rimlyproof_taskscope_20260609: resolve role for scope decisions.
+        try {
+            $this->load->library('BearerAuth');
+            $ba = $this->bearerauth->resolve();
+            $this->role = (!empty($ba['role'])) ? strtolower((string)$ba['role']) : '';
+        } catch (Exception $e) { $this->role = ''; }
         return $uid;
+    }
+
+    /**
+     * rimlyproof_taskscope_20260609: resolve the uid whose data the caller may
+     * read. Field users (BD/ACM) are hard-locked to their own uid; master/system
+     * and managers may target the requested uid.
+     */
+    private function _scope_target_uid($requested) {
+        $requested = (int)$requested;
+        if ($this->uid > 0 && ($this->role === 'bd' || $this->role === 'acm')) {
+            return (int)$this->uid;
+        }
+        return $requested > 0 ? $requested : (int)$this->uid;
     }
 
     private function _json($data, $code = 200) {
@@ -151,7 +171,7 @@ class Mobile_stub_real extends CI_Controller {
         }
         try {
             $event = $this->db->query(
-                "SELECT id, cid_id, fwd_date, meeting_type, remark
+                "SELECT id, cid_id, fwd_date, meeting_type, remarks
                  FROM tblcallevents
                  WHERE id = ? LIMIT 1",
                 array($event_id)
@@ -450,10 +470,9 @@ class Mobile_stub_real extends CI_Controller {
         }
         try {
             $rows = $this->db->query(
-                "SELECT id AS contact_id, cid_id, name, role, mobile, email, active, created_at
-                 FROM `{$tbl}`
-                 WHERE cid_id = ? AND active = 1
-                 ORDER BY id ASC",
+                ($tbl === "stakeholder_contact_book")
+                    ? "SELECT id AS contact_id, cid_id, contact_name AS name, contact_role AS role, contact_phone AS mobile, contact_email AS email, is_active AS active, created_at FROM `{$tbl}` WHERE cid_id = ? AND is_active = 1 ORDER BY id ASC"
+                    : "SELECT id AS contact_id, cid_id, name, NULL AS role, phone AS mobile, email, verified AS active, created_at FROM `{$tbl}` WHERE cid_id = ? ORDER BY id ASC",
                 array($cid_id)
             )->result_array();
             $this->_json(array('ok' => true, 'cid_id' => $cid_id, 'rows' => $rows, 'count' => count($rows)));
@@ -753,8 +772,7 @@ class Mobile_stub_real extends CI_Controller {
     // 20. GET /api/discipline/bd_score?uid=&date=
     public function discipline_bd_score() {
         $this->_auth();
-        $target_uid = (int)$this->input->get('uid');
-        if (!$target_uid) $target_uid = $this->uid;
+        $target_uid = $this->_scope_target_uid($this->input->get('uid'));
         $date = $this->input->get('date') ?: date('Y-m-d');
         try {
             $meetings_row = $this->db->query(
@@ -799,8 +817,7 @@ class Mobile_stub_real extends CI_Controller {
     // 21. GET /api/discipline/narrative?uid=&date=
     public function discipline_narrative() {
         $this->_auth();
-        $target_uid = (int)$this->input->get('uid');
-        if (!$target_uid) $target_uid = $this->uid;
+        $target_uid = $this->_scope_target_uid($this->input->get('uid'));
         $date = $this->input->get('date') ?: date('Y-m-d');
         try {
             $meetings_row = $this->db->query(
@@ -844,8 +861,7 @@ class Mobile_stub_real extends CI_Controller {
     // 22. GET /api/task/check_queue?uid=
     public function task_check_queue() {
         $this->_auth();
-        $target_uid = (int)$this->input->get('uid');
-        if (!$target_uid) $target_uid = $this->uid;
+        $target_uid = $this->_scope_target_uid($this->input->get('uid'));
         try {
             $tbl = null;
             if ($this->db->table_exists('auto_tasks_v2')) {
@@ -907,8 +923,7 @@ class Mobile_stub_real extends CI_Controller {
     // 24. GET /api/task/live?uid=
     public function task_live() {
         $this->_auth();
-        $target_uid = (int)$this->input->get('uid');
-        if (!$target_uid) $target_uid = $this->uid;
+        $target_uid = $this->_scope_target_uid($this->input->get('uid'));
         try {
             $tbl = null;
             if ($this->db->table_exists('auto_tasks_v2')) {
@@ -929,45 +944,76 @@ class Mobile_stub_real extends CI_Controller {
         }
     }
 
-    // 25. POST /api/task/preflight
+    // 25. GET/POST /api/task/preflight  (rimlyproof fix 20260608: accept GET uid/taskid/tid, optional taskid, return hard_gates/soft_gates contract the app consumes)
     public function task_preflight() {
         $uid  = $this->_auth();
         $raw  = $this->_body();
         $body = json_decode($raw, true) ?: array();
-        $taskid     = isset($body['taskid']) ? (int)$body['taskid'] : 0;
-        $target_uid = isset($body['uid'])    ? (int)$body['uid']    : $uid;
-        if (!$taskid) {
-            $this->_json(array('ok' => false, 'error' => 'taskid required'), 400);
+
+        // Accept uid from GET or body; default to authed uid.
+        $target_uid = 0;
+        if ($this->input->get('uid') !== null && $this->input->get('uid') !== '') {
+            $target_uid = (int)$this->input->get('uid');
+        } elseif (isset($body['uid'])) {
+            $target_uid = (int)$body['uid'];
         }
-        $blockers = array();
-        $can_start = true;
+        if (!$target_uid) { $target_uid = (int)$uid; }
+        // rimlyproof_taskscope_20260609: a field user is locked to their own uid
+        // regardless of any GET/body uid param.
+        $target_uid = $this->_scope_target_uid($target_uid);
+
+        // taskid is OPTIONAL. Accept GET taskid/tid or body taskid/tid.
+        $taskid = 0;
+        if ($this->input->get('taskid') !== null && $this->input->get('taskid') !== '') {
+            $taskid = (int)$this->input->get('taskid');
+        } elseif ($this->input->get('tid') !== null && $this->input->get('tid') !== '') {
+            $taskid = (int)$this->input->get('tid');
+        } elseif (isset($body['taskid'])) {
+            $taskid = (int)$body['taskid'];
+        } elseif (isset($body['tid'])) {
+            $taskid = (int)$body['tid'];
+        }
+
+        $hard_gates = array();
+        $soft_gates = array();
         try {
-            // Check day ceremony started
-            $ceremony = $this->db->query(
-                "SELECT id FROM day_ceremony_log WHERE uid=? AND ceremony_date=CURDATE() LIMIT 1",
-                array($target_uid)
+            // Day-start truth: same source as /api/discipline/state (user_day keyed on user_id).
+            $today = date('Y-m-d');
+            $day = $this->db->query(
+                "SELECT id FROM user_day
+                 WHERE user_id = ? AND CAST(sdatet AS DATE) = ?
+                 ORDER BY id DESC LIMIT 1",
+                array($target_uid, $today)
             )->row();
-            if (!$ceremony) {
-                $blockers[]= 'day_ceremony_not_started';
-                $can_start = false;
+            if (!$day) {
+                $hard_gates[] = array(
+                    'code'      => 'day_not_started',
+                    'label'     => 'Start your day before opening tasks',
+                    'fix_route' => 'DayManagement',
+                );
             }
-            // Check no active leave (if leave_log table exists)
+
+            // Soft gate: approved leave today (only if table exists).
             if ($this->db->table_exists('leave_log')) {
                 $leave = $this->db->query(
                     "SELECT id FROM leave_log WHERE uid=? AND leave_date=CURDATE() AND status='approved' LIMIT 1",
                     array($target_uid)
                 )->row();
                 if ($leave) {
-                    $blockers[]= 'user_on_leave';
-                    $can_start = false;
+                    $soft_gates[] = array(
+                        'code'  => 'user_on_leave',
+                        'label' => 'You are marked on approved leave today',
+                    );
                 }
             }
+
             $this->_json(array(
-                'ok'        => true,
-                'taskid'    => $taskid,
-                'uid'       => $target_uid,
-                'can_start' => $can_start,
-                'blockers'  => $blockers,
+                'ok'         => true,
+                'uid'        => $target_uid,
+                'taskid'     => $taskid,
+                'can_start'  => (count($hard_gates) === 0),
+                'hard_gates' => $hard_gates,
+                'soft_gates' => $soft_gates,
             ));
         } catch (Exception $e) {
             $this->_json(array('ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()), 500);
@@ -1025,7 +1071,7 @@ class Mobile_stub_real extends CI_Controller {
         $uid  = $this->_auth();
         $raw  = $this->_body();
         $body = json_decode($raw, true) ?: array();
-        $taskid     = isset($body['taskid']) ? (int)$body['taskid'] : 0;
+        $taskid     = isset($body['taskid']) ? (int)$body['taskid'] : (isset($body['tid']) ? (int)$body['tid'] : (int)($this->input->get('taskid') ?: $this->input->get('tid')));
         $target_uid = isset($body['uid'])    ? (int)$body['uid']    : $uid;
         if (!$taskid) {
             $this->_json(array('ok' => false, 'error' => 'taskid required'), 400);
@@ -1033,12 +1079,13 @@ class Mobile_stub_real extends CI_Controller {
         $criteria_met    = array();
         $criteria_missed = array();
         try {
-            // Criterion 1: MOM submitted for this task
+            // Criterion 1: MOM submitted for this task (event_id FK -> tblcallevents.id)
             if ($this->db->table_exists('mom_v2_submission')) {
-                $mom = $this->db->query(
-                    "SELECT id FROM mom_v2_submission WHERE task_id=? LIMIT 1",
+                $mom_res = $this->db->query(
+                    "SELECT submission_id FROM mom_v2_submission WHERE event_id=? LIMIT 1",
                     array($taskid)
-                )->row();
+                );
+                $mom = ($mom_res !== FALSE) ? $mom_res->row() : null;
                 if ($mom) {
                     $criteria_met[] = 'mom_submitted';
                 } else {
@@ -1048,26 +1095,30 @@ class Mobile_stub_real extends CI_Controller {
                 $criteria_missed[] = 'mom_submitted';
             }
 
-            // Criterion 2: Closure remark recorded
-            $tbl = $this->db->table_exists('auto_tasks_v2') ? 'auto_tasks_v2' : ($this->db->table_exists('task_planner') ? 'task_planner' : null);
-            if ($tbl) {
-                $task_row = $this->db->query(
-                    "SELECT status, remark FROM `{$tbl}` WHERE id=? LIMIT 1",
-                    array($taskid)
-                )->row();
-                if ($task_row && !empty($task_row->remark)) {
+            // Criterion 2+3: Read from tblcallevents (the live task table)
+            // status_id IN (12,13,14) = Positive-NAP / Very Positive-NAP / On-Boarded (terminal closed states)
+            $tce_res = $this->db->query(
+                "SELECT remarks, status_id, cid_id FROM tblcallevents WHERE id=? LIMIT 1",
+                array($taskid)
+            );
+            $tce_row = ($tce_res !== FALSE) ? $tce_res->row() : null;
+            if ($tce_row === null) {
+                // Row not found: criteria missed, never a 500
+                $criteria_missed[] = 'closure_remark';
+                $criteria_missed[] = 'task_closed';
+            } else {
+                if (!empty($tce_row->remarks)) {
                     $criteria_met[] = 'closure_remark';
                 } else {
                     $criteria_missed[] = 'closure_remark';
                 }
-                if ($task_row && $task_row->status === 'closed') {
+                // Closed states: status_id IN (12,13,14)
+                $closed_ids = array(12, 13, 14);
+                if (in_array((int)$tce_row->status_id, $closed_ids)) {
                     $criteria_met[] = 'task_closed';
                 } else {
                     $criteria_missed[] = 'task_closed';
                 }
-            } else {
-                $criteria_missed[] = 'closure_remark';
-                $criteria_missed[] = 'task_closed';
             }
 
             $qualifies = empty($criteria_missed);
@@ -1078,8 +1129,9 @@ class Mobile_stub_real extends CI_Controller {
                 'criteria_met'        => $criteria_met,
                 'criteria_missed'     => $criteria_missed,
             ));
-        } catch (Exception $e) {
-            $this->_json(array('ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()), 500);
+        } catch (\Throwable $e) {
+            log_message('error', 'task_star_check: ' . $e->getMessage());
+            $this->_json(array('ok' => false, 'error' => 'db_error'));
         }
     }
 
@@ -1134,17 +1186,68 @@ class Mobile_stub_real extends CI_Controller {
         }
     }
 
-    // 29. POST /api/task/upload_attachment  — placeholder (no file crash)
+    // 29. POST /api/task/upload_attachment
     public function task_upload_attachment() {
-        $this->_auth();
-        // File upload requires multipart/form-data processing.
-        // This placeholder prevents mobile crash on parse; full implementation
-        // should handle $_FILES['attachment'] and store to S3/disk.
-        $this->_json(array(
-            'ok'            => true,
-            'note'          => 'file upload requires multipart/form-data; use POST with file field "attachment"',
-            'attachment_id' => null,
-        ));
+        $uid = $this->_auth();
+        // Accept multipart field "file" (primary) or "attachment" (fallback)
+        $file_key = null;
+        if (isset($_FILES['file']) && $_FILES['file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file_key = 'file';
+        } elseif (isset($_FILES['attachment']) && $_FILES['attachment']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file_key = 'attachment';
+        }
+        if (!$file_key) {
+            $this->_json(array('ok' => false, 'error' => 'no_file', 'message' => 'No file received. Send multipart field file.'));
+            return;
+        }
+        $file = $_FILES[$file_key];
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $this->_json(array('ok' => false, 'error' => 'upload_error', 'message' => 'File upload error code ' . $file['error']));
+            return;
+        }
+        // Validate type by extension
+        $allowed_ext = array('jpg', 'jpeg', 'png', 'pdf');
+        $orig_name   = $file['name'];
+        $ext         = strtolower(pathinfo($orig_name, PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowed_ext)) {
+            $this->_json(array('ok' => false, 'error' => 'invalid_type', 'message' => 'Allowed types: jpg, jpeg, png, pdf. Got: ' . $ext));
+            return;
+        }
+        // Validate size: max 8 MB
+        $max_bytes = 8 * 1024 * 1024;
+        if ($file['size'] > $max_bytes) {
+            $this->_json(array('ok' => false, 'error' => 'file_too_large', 'message' => 'Max size is 8 MB. File is ' . round($file['size'] / 1024) . ' KB.'));
+            return;
+        }
+        // Ensure upload directory exists (0775)
+        $upload_dir = FCPATH . 'uploads/attachment/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0775, true);
+        }
+        // Generate unique filename: uid_timestamp_sanitized_original
+        $safe_orig   = preg_replace('/[^a-zA-Z0-9._-]/', '_', $orig_name);
+        $safe_orig   = substr($safe_orig, 0, 80);
+        $stored_name = intval($uid) . '_' . time() . '_' . $safe_orig;
+        $dest_path   = $upload_dir . $stored_name;
+        try {
+            if (!move_uploaded_file($file['tmp_name'], $dest_path)) {
+                log_message('error', 'task_upload_attachment: move_uploaded_file failed for uid=' . $uid);
+                $this->_json(array('ok' => false, 'error' => 'write_failed', 'message' => 'Could not save file to disk.'));
+                return;
+            }
+            $size_kb = (int)ceil($file['size'] / 1024);
+            $flink   = 'uploads/attachment/' . $stored_name;
+            $this->_json(array(
+                'ok'            => true,
+                'flink'         => $flink,
+                'filename'      => $stored_name,
+                'size_kb'       => $size_kb,
+                'attachment_id' => $stored_name,
+            ));
+        } catch (\Throwable $e) {
+            log_message('error', 'task_upload_attachment: ' . $e->getMessage());
+            $this->_json(array('ok' => false, 'error' => 'write_failed', 'message' => 'Exception during file save.'));
+        }
     }
 
 } // end class Mobile_stub_real

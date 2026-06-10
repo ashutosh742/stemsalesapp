@@ -40,11 +40,12 @@ class Proposal_sla extends CI_Controller
         if ($bd_uid <= 0) return $this->_json(['error' => 'bd_uid_required'], 400);
 
         $rows = $this->db
-            ->select('p.id AS sla_id, p.cid_id, ic.school_name, p.positive_at, p.sla_deadline,
+            ->select('p.id AS sla_id, p.cid_id, cm.compname AS school_name, p.positive_at, p.sla_deadline,
                       p.extension_used, p.status,
                       TIMESTAMPDIFF(MINUTE, NOW(), p.sla_deadline) AS minutes_remaining')
             ->from('proposal_sla_tracker p')
             ->join('init_call ic', 'ic.id = p.cid_id')
+            ->join('company_master cm', 'cm.id = ic.cmpid_id', 'left')
             ->where('p.bd_uid', $bd_uid)
             ->where_in('p.status', ['open','extended'])
             ->order_by('p.sla_deadline', 'asc')

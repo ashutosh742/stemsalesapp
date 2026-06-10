@@ -86,6 +86,8 @@ class Api_day_pack extends CI_Controller {
     }
 
     private function _check_auth() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized'], 401);

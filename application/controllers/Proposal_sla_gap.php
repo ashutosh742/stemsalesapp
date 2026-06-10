@@ -211,12 +211,13 @@ class Proposal_sla_gap extends CI_Controller
                     ->select('p.id AS sla_id, p.cid_id, p.bd_uid, p.cm_uid,
                               p.positive_at, p.sla_deadline, p.status, p.extension_used,
                               p.wallet_debit_rs, p.grade_penalty_points,
-                              ic.school_name,
+                              cm.compname AS school_name,
                               TIMESTAMPDIFF(HOUR, p.sla_deadline, NOW()) AS hours_overdue')
                     ->from('proposal_sla_tracker p');
 
                 if ($this->_table_ok('init_call')) {
                     $q->join('init_call ic', 'ic.id = p.cid_id', 'left');
+                    $q->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
                 }
 
                 if ($cm_uid > 0) {
@@ -424,7 +425,8 @@ class Proposal_sla_gap extends CI_Controller
 
             if ($this->_table_ok('init_call')) {
                 $q->join('init_call ic', 'ic.id = p.cid_id', 'left');
-                $q->select('ic.school_name', false);
+                $q->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+                $q->select('cm.compname AS school_name', false);
             }
 
             $rows = $q->get()->result_array();

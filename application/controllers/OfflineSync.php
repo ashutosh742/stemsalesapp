@@ -47,17 +47,19 @@ class Offline_sync extends CI_Controller
             return false;
         }
 
-        $token = substr($auth_header, 7);
-        // Load and validate against the existing token store.
-        // The stem_auth_helper is assumed present from migrations 022+.
-        $this->load->helper('stem_auth');
-        $user = stem_validate_token($token);
-        if (!$user || empty($user['uid'])) {
+        // rimlyproof_authunify_20260609: validate via the shared resolver
+        // (digest token OR per-user login token). The missing stem_auth helper
+        // (migration 022) was never shipped; authunify is the single source of truth.
+        if (!(function_exists('authunify_ok') && authunify_ok())) {
             $this->_json(['ok' => false, 'error' => 'INVALID_TOKEN'], 401);
             return false;
         }
-
-        return $user;
+        $uid = function_exists('authunify_uid') ? (int)authunify_uid() : 0;
+        if ($uid <= 0) {
+            // master/digest token (uid 0): allow caller to pass an explicit uid.
+            $uid = (int)$this->input->get('uid');
+        }
+        return array('uid' => $uid, 'role' => 'bd');
     }
 
     // -------------------------------------------------------------------------

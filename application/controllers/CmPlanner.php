@@ -46,6 +46,8 @@ class CmPlanner extends CI_Controller {
     }
 
     private function _unauthorized() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         http_response_code(401);
         echo json_encode(array('ok' => false, 'error' => 'unauthorized'));
         exit;

@@ -51,6 +51,8 @@ class LeadHeatmap extends CI_Controller
     // ------------------------------------------------------------------------
     private function _require_bearer()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized'], 401);
@@ -69,6 +71,8 @@ class LeadHeatmap extends CI_Controller
     // Stricter auth: only CRON_TOKEN accepted.
     private function _require_cron_token()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized'], 401);
@@ -154,12 +158,13 @@ class LeadHeatmap extends CI_Controller
         // Score row
         $score_row = $this->db->query("
             SELECT las.*,
-                   ic.compny_nm AS school,
+                   cm.compname AS school,
                    ic.cstatus,
                    COALESCE(ic.fbudget, 0) AS fbudget_rs,
                    CONCAT(ub.firstName, ' ', COALESCE(ub.lastName,'')) AS bd_name
               FROM lead_activity_score las
               INNER JOIN init_call ic ON ic.id = las.lead_id
+              LEFT  JOIN company_master cm ON cm.id = ic.cmpid_id
               LEFT  JOIN user ub      ON ub.uid = las.bd_uid
              WHERE las.lead_id = ?
              LIMIT 1

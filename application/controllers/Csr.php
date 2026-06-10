@@ -17,7 +17,26 @@ class CsrController extends CI_Controller {
         parent::__construct();
         $this->load->model('LinkedinCsr_model');
         $this->_check_auth();
+        $this->_rp_guard();
     }
+
+    // rimlyproof_publicguard_20260609: ROOT-CAUSE auth gate. This controller
+    // returned live business data with NO token check (fail-open). Allow only
+    // liveness/probe methods; require a valid digest OR per-user login token for
+    // every data method via the shared authunify_ok(). Additive: valid callers
+    // unchanged; only missing/garbage tokens are now rejected.
+    private $_rp_public = array('probe', 'status');
+    private function _rp_guard() {
+        $m = $this->router->fetch_method();
+        if (in_array($m, $this->_rp_public, true)) { return; }
+        if (substr($m, -6) === '_probe') { return; }
+        if (function_exists('authunify_ok') && authunify_ok()) { return; }
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(array('ok' => false, 'error' => 'unauthorized'));
+        exit;
+    }
+
 
     private function _check_auth() {
         $hdr = $this->input->get_request_header('Authorization');
@@ -69,10 +88,11 @@ class CsrController extends CI_Controller {
         $verdict = $this->input->get('verdict');
         $days    = (int)($this->input->get('days') ?: 7);
 
-        $this->db->select('c.*, m.uid AS bd_uid, u.username AS bd_name, ic.school_name, m.approved_status');
+        $this->db->select('c.*, m.uid AS bd_uid, u.username AS bd_name, cm.compname AS school_name, m.approved_status');
         $this->db->from('mom_csr_check c');
         $this->db->join('mom_data m', 'm.id = c.mom_id', 'left');
         $this->db->join('init_call ic', 'ic.id = c.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
         $this->db->join('user u', 'u.uid = m.uid', 'left');
         if ($verdict) $this->db->where('c.verdict', $verdict);
         $this->db->where('c.ran_at >=', date('Y-m-d H:i:s', strtotime("-{$days} days")));

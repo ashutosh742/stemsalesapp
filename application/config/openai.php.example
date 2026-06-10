@@ -1,0 +1,4 @@
+<?php
+// TEMPLATE for openai.php - real values live on the staging server only.
+// Copy this to openai.php on the server and fill in real credentials.
+// Do NOT commit the real openai.php (see .gitignore).

@@ -223,7 +223,7 @@ class Greetings extends CI_Controller
 
                 if ($this->_table_ok('init_call')) {
                     $q->join('init_call ic', 'ic.id = gt.init_call_id', 'left');
-                    $q->select('ic.school_name', false);
+                    $q->select('ic.exschool AS company_name', false); // C11 fix 2026-06-06: init_call has no school_name; exschool is the company/school name
                 }
 
                 $q->where('gt.status', $status)

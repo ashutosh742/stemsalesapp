@@ -34,6 +34,8 @@ class MomDraft extends CI_Controller
     // ------------------------------------------------------------------
     private function _auth_bearer()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized', 'detail' => 'missing_bearer_header'], 401);
@@ -71,7 +73,7 @@ class MomDraft extends CI_Controller
     //
     // Body (JSON):
     //   uid           int     required  caller BD uid
-    //   cid_id        int     required  init_call.cid_id the meeting is about
+    //   cid_id        int     required  init_call.id (the lead id) the meeting is about
     //   event_id      int     optional  tblcallevents.id if meeting already logged
     //   transcript    string  optional  raw text from voice-to-text (max 20000 chars)
     //   meeting_type  string  optional  fresh | rp | no_rp | barge (default fresh)

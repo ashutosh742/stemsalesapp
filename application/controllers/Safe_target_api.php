@@ -60,6 +60,48 @@ class Safe_target_api extends MY_Controller {
         try {
             $this->load->database();
             $fy = $this->input->get('fy') ?: 'FY27';
+
+            // REAL source of truth: org target from pipeline_coverage_config (rupees -> Cr).
+            $cfg = $this->db->select('target_rs')
+                ->from('pipeline_coverage_config')
+                ->where('scope_type', 'org')
+                ->order_by('id', 'DESC')
+                ->limit(1)
+                ->get()->row();
+
+            if ($cfg && isset($cfg->target_rs) && floatval($cfg->target_rs) > 0) {
+                $target_cr = round(floatval($cfg->target_rs) / 10000000.0, 4);
+
+                // REAL actual: sum latest pipeline snapshot per BD (rupees -> Cr).
+                $snap = $this->db->query(
+                    "SELECT COALESCE(SUM(s.pipeline_rs),0) AS pr
+                       FROM pipeline_coverage_snapshot s
+                       JOIN (SELECT scope_type, scope_uid, MAX(snapshot_date) AS md
+                               FROM pipeline_coverage_snapshot
+                              WHERE scope_type = 'bd'
+                              GROUP BY scope_type, scope_uid) latest
+                         ON s.scope_type = latest.scope_type
+                        AND s.scope_uid = latest.scope_uid
+                        AND s.snapshot_date = latest.md
+                      WHERE s.scope_type = 'bd'"
+                )->row();
+
+                $actual_cr = $snap ? round(floatval($snap->pr) / 10000000.0, 4) : 0;
+                $achieved = $target_cr > 0 ? round(($actual_cr / $target_cr) * 100, 2) : 0;
+
+                @ini_set('serialize_precision', '-1');
+                $this->_safe(array(
+                    'ok' => true,
+                    'fy' => $fy,
+                    'total_target_rs_cr' => (float) sprintf('%.2f', $target_cr),
+                    'total_actual_rs_cr' => (float) sprintf('%.2f', $actual_cr),
+                    'achieved_pct' => (float) sprintf('%.2f', $achieved),
+                    'source' => 'pipeline_coverage_config'
+                ));
+                return;
+            }
+
+            // FAIL-OPEN fallback: old quarterly view (kept so nothing breaks if config missing).
             $r = $this->db->select('SUM(target_rs_cr) AS t, SUM(actual_rs_cr) AS a')
                 ->from('v_target_war_points')
                 ->like('quarter', $fy, 'after')
@@ -67,12 +109,20 @@ class Safe_target_api extends MY_Controller {
             $t = floatval($r->t ?? 0);
             $a = floatval($r->a ?? 0);
             $achieved = $t > 0 ? round(($a / $t) * 100, 2) : 0;
-            $this->_safe(['ok' => true, 'fy' => $fy, 'total_target_rs_cr' => $t, 'total_actual_rs_cr' => $a, 'achieved_pct' => $achieved]);
+            $this->_safe(array(
+                'ok' => true,
+                'fy' => $fy,
+                'total_target_rs_cr' => $t,
+                'total_actual_rs_cr' => $a,
+                'achieved_pct' => $achieved,
+                'source' => 'v_target_war_points_fallback'
+            ));
         } catch (Exception $e) {
             log_message('error', 'Safe_target_api::headline: ' . $e->getMessage());
-            $this->_safe(['ok' => true, 'rows' => [], 'note' => 'no_data', 'detail' => $e->getMessage()]);
+            $this->_safe(array('ok' => true, 'rows' => array(), 'note' => 'no_data', 'detail' => $e->getMessage()));
         }
     }
+
 
     public function burndown() {
         try {
