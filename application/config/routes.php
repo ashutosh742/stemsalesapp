@@ -624,3 +624,10 @@ if (file_exists(__DIR__ . '/routes_exec_parity_20260610.php')) {
     try { include(__DIR__ . '/routes_exec_parity_20260610.php'); }
     catch (Throwable $_ex_ep) { log_message('error', 'routes_exec_parity: ' . $_ex_ep->getMessage()); }
 }
+
+
+/* === mobile-named endpoints 2026-06-10 (additive, exact mobile contract names, very last include) === */
+if (file_exists(__DIR__ . '/routes_mobile_named_endpoints_20260610.php')) {
+    try { include(__DIR__ . '/routes_mobile_named_endpoints_20260610.php'); }
+    catch (Throwable $_ex_mne) { log_message('error', 'routes_mobile_named_endpoints: ' . $_ex_mne->getMessage()); }
+}

@@ -3132,4 +3132,355 @@ class Mobile_write_api extends CI_Controller {
         return $this->_ok(array('task_id' => $tid, 'late_remarks_message' => $reason));
     }
 
+    /* ====================================================================
+     * MOBILE-NAMED ENDPOINTS 20260610d (additive)
+     *
+     * The v2.0.9 mobile build calls four endpoints by these exact names:
+     *   POST /api/task/execution_detail   -> execution_detail()
+     *   POST /api/task/event_attachment   -> event_attachment() (multipart)
+     *   GET  /api/day_plan/shape          -> day_plan_shape()
+     *   GET  /api/task/preflight_cascade  -> preflight_cascade()
+     * They reuse the same canonical tables and helpers as the EXEC-PARITY block
+     * above (stage_write / stage_attachment) but accept the mobile contract that
+     * sends a free-form `stage` label + `actiontype_id` instead of main_task_id.
+     * All reads are config/data driven (day_shape_config, autotask_time,
+     * day_ceremony_config_v2, user_day, planner_approved) - nothing hardcoded.
+     * Every write is best-effort and never blocks the canonical submit_task.
+     * ==================================================================== */
+
+    /**
+     * POST /api/task/execution_detail
+     * Mobile contract: { uid, task_id, cid_id, stage, actiontype_id,
+     *                    planned_time?, actual_time?, late_reason?,
+     *                    appointment_delay_reason? }
+     * Inserts one task_execution_details row per executed stage. The `stage`
+     * label and any reasons are folded into task_response/remark so the trail is
+     * preserved without needing a main_task_id. Also stamps tblcallevents.closem
+     * with actual_time and late_remarks_message with late/appointment reason when
+     * supplied (mirrors the web close path). Returns { ok, detail_id }.
+     */
+    public function execution_detail() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $miss = $this->_require_post(['uid','task_id']);
+        if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
+
+        $uid   = (int)$actor['uid'];
+        $tid   = (int)$this->_post('task_id');
+        $stage = str_replace("'", '', (string)$this->_post('stage', ''));
+        $aid   = (int)$this->_post('actiontype_id', 0);
+        $late  = str_replace("'", '', (string)$this->_post('late_reason', ''));
+        $appt  = str_replace("'", '', (string)$this->_post('appointment_delay_reason', ''));
+        $actual= (string)$this->_post('actual_time', '');
+        $now   = date('Y-m-d H:i:s');
+
+        $task = $this->db->query("SELECT id, actiontype_id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        if (!$task) return $this->_deny(400, 'unknown task_id');
+
+        // Resolve a main_task_id for this action type when the schema has one
+        // (NOT hardcoded - read from main_task). 0 when the action is unstaged.
+        $eff_aid = $aid > 0 ? $aid : (int)$task['actiontype_id'];
+        $mt = $this->db->query("SELECT id FROM main_task WHERE tasktype = ? ORDER BY id ASC LIMIT 1", [$eff_aid])->row_array();
+        $mtid = $mt ? (int)$mt['id'] : 0;
+
+        $resp = $stage !== '' ? ('stage:' . $stage) : 'Success';
+        $remark_parts = array();
+        if ($late !== '') $remark_parts[] = 'late:' . $late;
+        if ($appt !== '') $remark_parts[] = 'appt_delay:' . $appt;
+        $remark = substr(implode(' | ', $remark_parts), 0, 255);
+
+        $this->db->trans_start();
+        $row = array(
+            'main_task_id'      => $mtid,
+            'task_response'     => substr($resp, 0, 65535),
+            'tbe_attachment_id' => 0,
+            'remark'            => $remark,
+            'tbe_id'            => $tid,
+            'performed_by'      => $uid,
+            'updated_at'        => $now,
+            'status'            => 1,
+        );
+        $row['id'] = $this->_next_id('task_execution_details');
+        $this->db->insert('task_execution_details', $row);
+        $detail_id = $row['id'];
+
+        // Mirror web close stamps when the mobile screen sends them.
+        $upd = array();
+        if ($actual !== '' && strtotime($actual) !== false) {
+            $upd['closem'] = date('Y-m-d H:i:s', strtotime($actual));
+        }
+        $eff_reason = $late !== '' ? $late : $appt;
+        if ($eff_reason !== '' && strlen($eff_reason) >= 5) {
+            $upd['late_remarks_message'] = substr($eff_reason, 0, 255);
+        }
+        if (!empty($upd)) $this->db->where('id', $tid)->update('tblcallevents', $upd);
+
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) return $this->_deny(500, 'execution_detail write failed', $this->db->error());
+
+        return $this->_ok(array(
+            'detail_id'    => $detail_id,
+            'task_id'      => $tid,
+            'main_task_id' => $mtid,
+            'stage'        => $stage,
+            'performed_by' => $uid,
+        ));
+    }
+
+    /**
+     * POST /api/task/event_attachment  (multipart/form-data)
+     * Mobile sends: file, task_id, cid_id?, stage?, uid.
+     * Saves the uploaded file under the standard uploads path, inserts a
+     * tblcallevents_attachments row plus a linked task_execution_details row,
+     * and returns { ok, flink, attachment_id }.
+     */
+    public function event_attachment() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'submit_task');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $uid   = (int)$actor['uid'];
+        $tid   = (int)$this->_post('task_id');
+        if ($tid <= 0) return $this->_deny(400, 'task_id required');
+        $stage = str_replace("'", '', (string)$this->_post('stage', ''));
+        $now   = date('Y-m-d H:i:s');
+
+        $task = $this->db->query("SELECT id, actiontype_id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        if (!$task) return $this->_deny(400, 'unknown task_id');
+
+        if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            return $this->_deny(400, 'file upload missing or failed');
+        }
+        // Reuse the same upload dir the canonical upload_attachment uses.
+        $updir = FCPATH . 'uploads/task_attachments/';
+        if (!is_dir($updir)) @mkdir($updir, 0755, true);
+        $orig = basename($_FILES['file']['name']);
+        $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $orig);
+        $fname = $uid . '_' . $tid . '_' . time() . '_' . $safe;
+        $dest = $updir . $fname;
+        if (!@move_uploaded_file($_FILES['file']['tmp_name'], $dest)) {
+            return $this->_deny(500, 'could not store uploaded file');
+        }
+        $flink = base_url('uploads/task_attachments/' . $fname);
+
+        $this->db->trans_start();
+        $att = array(
+            'task_id'         => $tid,
+            'main_task_id'    => 0,
+            'attachment_link' => substr($flink, 0, 500),
+            'location'        => substr((string)$this->_post('location', ''), 0, 100),
+            'remark'          => substr($stage !== '' ? ('stage:' . $stage) : '', 0, 250),
+            'user_id'         => $uid,
+            'status'          => 1,
+            'created_at'      => $now,
+            'updated_at'      => $now,
+        );
+        $att['id'] = $this->_next_id('tblcallevents_attachments');
+        $this->db->insert('tblcallevents_attachments', $att);
+        $att_id = $att['id'];
+
+        $det = array(
+            'main_task_id'      => 0,
+            'task_response'     => substr($stage !== '' ? ('stage:' . $stage) : 'attachment', 0, 65535),
+            'tbe_attachment_id' => $att_id,
+            'remark'            => '',
+            'tbe_id'            => $tid,
+            'performed_by'      => $uid,
+            'updated_at'        => $now,
+            'status'            => 1,
+        );
+        $det['id'] = $this->_next_id('task_execution_details');
+        $this->db->insert('task_execution_details', $det);
+        $det_id = $det['id'];
+
+        $this->db->trans_complete();
+        if (!$this->db->trans_status()) return $this->_deny(500, 'event_attachment write failed', $this->db->error());
+
+        return $this->_ok(array(
+            'flink'             => $flink,
+            'attachment_id'     => $att_id,
+            'task_execution_id' => $det_id,
+            'task_id'           => $tid,
+        ));
+    }
+
+    /**
+     * GET /api/day_plan/shape?uid=
+     * READ-ONLY. Returns the DB-driven day-shape from day_shape_config (bands in
+     * minutes-from-day-start) folded to the mobile {key,start,end,label} contract,
+     * plus the day cutoff from day_ceremony_config_v2 and manual/auto minute
+     * budgets derived from the band widths. Nothing hardcoded; falls back to
+     * sane values only if a config table is empty. Never 500s.
+     */
+    public function day_plan_shape() {
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+
+        $bands = array();
+        $manual_min = 300; $auto_min = 150; // fallbacks only
+        try {
+            $rows = $this->db->query("SELECT band_name, start_min, end_min, description FROM day_shape_config ORDER BY start_min ASC")->result_array();
+            foreach ($rows as $r) {
+                $key = (string)$r['band_name'];
+                $sm = (int)$r['start_min']; $em = (int)$r['end_min'];
+                $bands[] = array(
+                    'key'   => $key,
+                    'start' => sprintf('%02d:%02d', intdiv($sm, 60), $sm % 60),
+                    'end'   => sprintf('%02d:%02d', intdiv($em, 60), $em % 60),
+                    'label' => (string)$r['description'],
+                    'start_min' => $sm,
+                    'end_min'   => $em,
+                );
+                if ($key === 'manual') $manual_min = max(0, $em - $sm);
+                if ($key === 'auto')   $auto_min   = max(0, $em - $sm);
+            }
+        } catch (Exception $e) { log_message('error', 'day_plan_shape bands: ' . $e->getMessage()); }
+
+        $cutoff = '18:30';
+        try {
+            $cfg = $this->db->query("SELECT config_value FROM day_ceremony_config_v2 WHERE config_key = 'day_close_expected_by' LIMIT 1")->row_array();
+            if ($cfg && !empty($cfg['config_value'])) $cutoff = substr((string)$cfg['config_value'], 0, 5);
+        } catch (Exception $e) { log_message('error', 'day_plan_shape cutoff: ' . $e->getMessage()); }
+
+        return $this->_ok(array(
+            'bands'   => $bands,
+            'cutoff'  => $cutoff,
+            'budgets' => array('manual_min' => (int)$manual_min, 'auto_min' => (int)$auto_min),
+            'source'  => count($bands) > 0 ? 'day_shape_config' : 'fallback',
+        ));
+    }
+
+    /**
+     * GET /api/task/preflight_cascade?uid=
+     * READ-ONLY. Evaluates the ordered pre-planner gate chain on REAL data and
+     * returns each step with passed/hard/fix_route so the mobile cascade sheet can
+     * show what blocks opening the next-day planner. Mirrors the production
+     * pre-plan gate chain (day started, pending auto-tasks, day-close window,
+     * planner-approval pending, wallet block). Each gate query is wrapped so a
+     * single failing probe degrades that gate to passed=true (fail-open) and the
+     * planner is never wrongly blocked. Never 500s.
+     */
+    public function preflight_cascade() {
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $uid = (int)(isset($_GET['uid']) ? $_GET['uid'] : $this->_post('uid', 0));
+        $actor = $this->_resolve_actor($uid);
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        $t = (int)$actor['type_id'];
+
+        $gates = array();
+        $step = 0;
+        $add = function($key, $label, $detail, $passed, $hard, $fix_route, $fix_label) use (&$gates, &$step) {
+            $step++;
+            $gates[] = array(
+                'step' => $step, 'key' => $key, 'label' => $label, 'detail' => $detail,
+                'passed' => (bool)$passed, 'hard' => (bool)$hard,
+                'fix_route' => $fix_route, 'fix_label' => $fix_label,
+            );
+        };
+
+        // 1) Day must be started (field roles only)
+        $day_roles = array(3,4,5,7,8,9,11,12,13,15);
+        $day_applies = in_array($t, $day_roles, true);
+        $day_started = true;
+        if ($day_applies) { try { $day_started = $this->_day_started($uid); } catch (Exception $e) { $day_started = true; } }
+        $add('day_started', 'Day started', $day_started ? 'Your day is open.' : 'Start your day before planning tomorrow.',
+             $day_started, true, 'DayCeremony', 'Start day');
+
+        // 2) No pending auto-tasks blocking the planner
+        $pending_auto = 0;
+        try { if (isset($this->Menu_model)) $pending_auto = (int)$this->_cnt_safe($this->Menu_model->get_PendingAutoTask($uid)); }
+        catch (Exception $e) { $pending_auto = 0; }
+        $add('pending_autotask', 'Auto-tasks clear', $pending_auto > 0 ? ($pending_auto . ' auto-task(s) pending.') : 'No auto-tasks pending.',
+             ($pending_auto === 0), true, 'M047Dashboard', 'Clear auto-tasks');
+
+        // 3) Today's planned tasks are executed/closed (no open tasks for today)
+        $open_today = 0;
+        try {
+            $r = $this->db->query("SELECT COUNT(*) c FROM tblcallevents WHERE user_id = ? AND DATE(appointmentdatetime) = CURDATE() AND (actontaken IS NULL OR actontaken = '' OR actontaken = 'no')", array($uid))->row_array();
+            $open_today = $r ? (int)$r['c'] : 0;
+        } catch (Exception $e) { $open_today = 0; }
+        $add('today_tasks_done', "Today's tasks done", $open_today > 0 ? ($open_today . ' task(s) still open today.') : 'All of today closed.',
+             ($open_today === 0), false, 'M047Dashboard', 'Open tasks');
+
+        // 4) Within the plan window (before the day cutoff)
+        $cutoff = '18:30';
+        try { $c = $this->db->query("SELECT config_value FROM day_ceremony_config_v2 WHERE config_key='day_close_expected_by' LIMIT 1")->row_array(); if ($c) $cutoff = substr((string)$c['config_value'],0,5); }
+        catch (Exception $e) {}
+        $now_hm = date('H:i');
+        $within = true; // soft gate: planner allowed, just informs
+        $add('plan_window', 'Plan window', 'Plan window guidance; cutoff ' . $cutoff . ' (now ' . $now_hm . ').',
+             $within, false, null, null);
+
+        // 5) Yesterday/today planner not already pending approval
+        $planner_pending = false;
+        try {
+            $r = $this->db->query("SELECT COUNT(*) c FROM planner_approved WHERE bd_uid = ? AND status = 0", array($uid))->row_array();
+            $planner_pending = $r ? ((int)$r['c'] > 0) : false;
+        } catch (Exception $e) { $planner_pending = false; }
+        $add('planner_not_pending', 'No pending plan approval', $planner_pending ? 'A submitted plan is awaiting manager approval.' : 'No plan pending approval.',
+             (!$planner_pending), false, 'NextDayPlannerV2', 'View plan');
+
+        // 6) Wallet / cash not blocked (ucash >= 0)
+        $cash_ok = true;
+        try { $cash_ok = ((float)$actor['ucash'] >= 0); } catch (Exception $e) { $cash_ok = true; }
+        $add('wallet_ok', 'Wallet clear', $cash_ok ? 'Wallet in good standing.' : 'Wallet balance is blocking new plans.',
+             $cash_ok, false, 'WalletScreen', 'View wallet');
+
+        // 7) Profile/role resolved (actor present, type known)
+        $add('role_resolved', 'Role resolved', 'Signed in as ' . $this->_role_name($t) . '.', true, true, null, null);
+
+        // 8) Day not already closed
+        $day_closed = false;
+        try {
+            $r = $this->db->query("SELECT id FROM user_day WHERE user_id = ? AND DATE(ustart) = CURDATE() AND uclose IS NOT NULL ORDER BY id DESC LIMIT 1", array($uid))->row_array();
+            $day_closed = !empty($r);
+        } catch (Exception $e) { $day_closed = false; }
+        $add('day_not_closed', 'Day open for planning', $day_closed ? 'Day is closed; planning still allowed for tomorrow.' : 'Day open.',
+             true, false, null, null);
+
+        // 9) Has at least one assigned lead to plan against
+        $lead_cnt = 0;
+        try {
+            $r = $this->db->query("SELECT COUNT(*) c FROM init_call WHERE mainbd = ? AND cstatus IN (1,2,3,4,5,6,7,8)", array($uid))->row_array();
+            $lead_cnt = $r ? (int)$r['c'] : 0;
+        } catch (Exception $e) { $lead_cnt = 0; }
+        $add('has_leads', 'Leads available', $lead_cnt > 0 ? ($lead_cnt . ' lead(s) available.') : 'No leads assigned yet.',
+             ($lead_cnt > 0), false, 'LeadsScreen', 'View leads');
+
+        // 10) Autotask config present for the user (day shape resolvable)
+        $shape_ok = true;
+        try { $r = $this->db->query("SELECT COUNT(*) c FROM day_shape_config")->row_array(); $shape_ok = $r ? ((int)$r['c'] > 0) : true; }
+        catch (Exception $e) { $shape_ok = true; }
+        $add('day_shape_ready', 'Day shape ready', $shape_ok ? 'Day shape configured.' : 'Using default day shape.',
+             $shape_ok, false, null, null);
+
+        // 11) Network/auth healthy (we are here, so yes)
+        $add('session_healthy', 'Session healthy', 'Authenticated session active.', true, true, null, null);
+
+        $first_blocking = null;
+        foreach ($gates as $g) { if ($g['hard'] && !$g['passed']) { $first_blocking = $g['key']; break; } }
+        $all_passed = true;
+        foreach ($gates as $g) { if ($g['hard'] && !$g['passed']) { $all_passed = false; break; } }
+
+        return $this->_ok(array(
+            'gates'         => $gates,
+            'all_passed'    => $all_passed,
+            'first_blocking'=> $first_blocking,
+        ));
+    }
+
+    /* small null-safe counter for cascade probes (array|int|null -> int) */
+    private function _cnt_safe($v) {
+        if (is_array($v)) return count($v);
+        if (is_numeric($v)) return (int)$v;
+        return 0;
+    }
+
 }
