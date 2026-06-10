@@ -23,6 +23,8 @@ class EscalationTicket_api extends CI_Controller {
     }
 
     private function _auth() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $h = $this->input->request_headers();
         $a = isset($h['Authorization']) ? $h['Authorization'] : '';
         $exp = 'Bearer ' . (defined('STEM_DIGEST_TOKEN') ? STEM_DIGEST_TOKEN : getenv('STEM_DIGEST_TOKEN'));

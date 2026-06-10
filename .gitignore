@@ -1,19 +1,25 @@
-# Never commit real secrets
-application/config/secrets.local.php
-*.env
-secrets.env
-*.env.local
+# Secrets - real values live ONLY on the server, never in git
+application/config/database.php
+application/config/openai.php
+application/config/deepseek.php
+application/config/email.php
+application/config/email_agent_config.php
+application/config/config.php
+application/config/memcached.php
+application/config/rest.php
+application/config/anaya.php
 
-# Backups created during deploys
+# Local edit backups (never commit)
 *.bak
+*.bak_*
 *.bak.*
 
-# PHP runtime
-application/logs/*
-application/cache/*
-!application/logs/.gitkeep
-!application/cache/.gitkeep
+# Logs / uploads / runtime
+logs/
+uploads/
+*.log
 
-# OS
-.DS_Store
-Thumbs.db
+# Runtime artifacts (not source)
+application/cache/
+application/logs/
+application/sessions/

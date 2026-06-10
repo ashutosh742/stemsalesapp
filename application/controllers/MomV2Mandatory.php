@@ -383,14 +383,15 @@ class MomV2_Mandatory extends CI_Controller {
              s.answers_completed, s.answers_required, s.quality_grade, s.quality_score,
              s.status, s.submitted_at, s.cm_action_at, s.rejected_question_ids_json,
              u.firstname AS bd_firstname, u.lastname AS bd_lastname,
-             ic.company_name AS school_name, ic.current_status_id AS cstatus,
-             ic.partner_type,
+             cm.compname AS school_name, ic.cstatus,
+             cm.partnerType_id AS partner_type,
              al.cstatus_at_lock, al.actiontype_id,
              al.required_questions_json'
         );
         $this->db->from('mom_v2_submission s');
         $this->db->join('user u',                        'u.uid = s.bd_uid',               'left');
         $this->db->join('init_call ic',                  'ic.id = s.cid_id',               'left');
+        $this->db->join('company_master cm',             'cm.id = ic.cmpid_id',           'left');
         $this->db->join('mom_v2_meeting_agenda_lock al', 'al.event_id = s.event_id',       'left');
         $this->db->where('s.cm_uid', $cm_uid);
         $this->db->where('s.status', $status);
@@ -501,6 +502,8 @@ class MomV2_Mandatory extends CI_Controller {
      * but still requires the feature flag to be true.
      */
     private function _guard() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         // Flag check.
         $this->db->where('config_key', 'mom_v2_mandatory_enabled');
         $flag = $this->db->get('app_config')->row_array();

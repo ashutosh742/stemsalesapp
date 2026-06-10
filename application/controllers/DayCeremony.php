@@ -25,6 +25,8 @@ class DayCeremonyController extends CI_Controller {
     }
 
     private function _auth() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdrs = getallheaders();
         $auth = isset($hdrs['Authorization']) ? $hdrs['Authorization'] : (isset($hdrs['authorization']) ? $hdrs['authorization'] : '');
         $expected = getenv('STEM_DIGEST_TOKEN') ?: 'replace-me';

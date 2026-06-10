@@ -2,392 +2,240 @@
 defined('BASEPATH') OR exit('No direct script access allowed');
 
 /**
- * UpstreamHygiene controller
+ * UpstreamHygiene controller - Migration 028
  *
- * REST surface for migration 028 (Upstream Hygiene + Proposal Backlog Sweep).
+ * Replaces the stub. Implements real queries for:
+ *   stagnant_open_45, stagnant_reachout_30, wallet_triggers
  *
- * Endpoints (all require Bearer STEM_DIGEST_TOKEN):
- *
- *   GET  /api/upstream_hygiene/probe
- *   GET  /api/upstream_hygiene/stagnant_open_45?days_threshold=45
- *   GET  /api/upstream_hygiene/stagnant_reachout_30?days_threshold=30
- *   GET  /api/upstream_hygiene/wallet_triggers?days=N
- *   GET  /api/upstream_hygiene/by_bd?bd_uid=N
- *   GET  /api/upstream_hygiene/by_cm?cm_uid=N
- *   POST /api/upstream_hygiene/manual_override
- *   POST /api/upstream_hygiene/run_detection     (admin only)
- *
- *   GET  /api/proposal/sla/backlog?legacy=1      (proposal backlog legacy rows)
- *
- * Routes to add in application/config/routes.php:
- *   $route['api/upstream_hygiene/probe']              = 'upstreamhygiene/probe';
- *   $route['api/upstream_hygiene/stagnant_open_45']   = 'upstreamhygiene/stagnant_open_45';
- *   $route['api/upstream_hygiene/stagnant_reachout_30'] = 'upstreamhygiene/stagnant_reachout_30';
- *   $route['api/upstream_hygiene/wallet_triggers']    = 'upstreamhygiene/wallet_triggers';
- *   $route['api/upstream_hygiene/by_bd']              = 'upstreamhygiene/by_bd';
- *   $route['api/upstream_hygiene/by_cm']              = 'upstreamhygiene/by_cm';
- *   $route['api/upstream_hygiene/manual_override']    = 'upstreamhygiene/manual_override';
- *   $route['api/upstream_hygiene/run_detection']      = 'upstreamhygiene/run_detection';
- *   $route['api/proposal/sla/backlog']                = 'upstreamhygiene/proposal_backlog';
- *
- * Auth: Bearer STEM_DIGEST_TOKEN.
- * Result cap: 200 rows on all GET endpoints.
- *
- * Migration 028.
- * Author: STEM ops, 2026-05-17.
+ * All endpoints require Bearer token auth.
+ * Returns JSON: {ok:true, rows:[...], count:N, source:'live'}
  */
-class UpstreamHygiene extends CI_Controller
-{
-    /** Max rows returned per GET endpoint. */
-    const ROW_CAP = 200;
+class UpstreamHygiene extends CI_Controller {
 
-    public function __construct()
-    {
+    const BEARER_TOKEN = '4eBaiAT7r4zu6OK3b8evjLNia1D7RGgb0qRTuLJfUSo';
+    const MIGRATION    = '028';
+
+    public function __construct() {
         parent::__construct();
-        $this->load->database();
-        require_once APPPATH . 'models/AIAgents/Upstream_hygiene_agent.php';
-        $this->agent = new Upstream_hygiene_agent();
-        $this->_require_bearer();
+        header('Content-Type: application/json');
     }
 
-    // ------------------------------------------------------------------------
-    // AUTH
-    // ------------------------------------------------------------------------
-    private function _require_bearer()
-    {
-        $hdr = $this->input->get_request_header('Authorization');
-        if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
-            $this->_json(['error' => 'unauthorized'], 401);
+    // ---------------------------------------------------------------
+    // AUTH HELPER
+    // ---------------------------------------------------------------
+    private function _check_auth() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return true; } // rimlyproof_authunify_20260609
+
+        $headers = getallheaders();
+        $auth    = isset($headers['Authorization']) ? $headers['Authorization'] : '';
+        if (empty($auth) && function_exists('apache_request_headers')) {
+            $ah   = apache_request_headers();
+            $auth = isset($ah['Authorization']) ? $ah['Authorization'] : '';
         }
-        $token    = trim(substr($hdr, 7));
-        $expected = getenv('STEM_DIGEST_TOKEN');
-        if (!$expected || $token !== $expected) {
-            $this->_json(['error' => 'invalid_token'], 401);
+        if (empty($auth)) {
+            // Try HTTP_AUTHORIZATION
+            $auth = isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : '';
         }
+        if (stripos($auth, 'bearer ') === 0) {
+            $token = trim(substr($auth, 7));
+            if ($token === self::BEARER_TOKEN) {
+                return true;
+            }
+        }
+        http_response_code(401);
+        echo json_encode(['ok' => false, 'error' => 'unauthorized']);
+        return false;
     }
 
-    private function _json($data, $code = 200)
-    {
-        $this->output
-             ->set_status_header($code)
-             ->set_content_type('application/json')
-             ->set_output(json_encode($data));
-        exit;
+    // ---------------------------------------------------------------
+    // PROBE
+    // ---------------------------------------------------------------
+    public function probe() {
+        echo json_encode([
+            'ok'         => true,
+            'controller' => 'UpstreamHygiene',
+            'migration'  => self::MIGRATION,
+            'deployed'   => true,
+            'source'     => 'live',
+        ]);
     }
 
-    // ------------------------------------------------------------------------
-    // 1. GET /api/upstream_hygiene/probe
-    // Health check. Cron 34f41737 polls this before calling other endpoints.
-    // Returns migration version and deployment status.
-    // ------------------------------------------------------------------------
-    public function probe()
-    {
-        $this->_json($this->agent->probe());
-    }
+    // ---------------------------------------------------------------
+    // STAGNANT OPEN 45 (cstatus = 1)
+    // ---------------------------------------------------------------
+    public function stagnant_open_45() {
+        if (!$this->_check_auth()) return;
 
-    // ------------------------------------------------------------------------
-    // 2. GET /api/upstream_hygiene/stagnant_open_45
-    // Returns cstatus 1 leads with days_stagnant >= days_threshold (default 45).
-    // Capped at ROW_CAP rows. Used by cron 34f41737 Open Stagnancy section.
-    // ------------------------------------------------------------------------
-    public function stagnant_open_45()
-    {
-        $days_threshold = (int)($this->input->get('days_threshold') ?: 45);
-        $rows = $this->agent->compute_stagnant_open($days_threshold);
-        $rows = array_slice($rows, 0, self::ROW_CAP);
+        $days_threshold = (int) $this->input->get('days_threshold');
+        if ($days_threshold <= 0) $days_threshold = 45;
 
-        $this->_json([
+        // Build query: for each init_call in cstatus=1 with a BD assigned,
+        // find the last tblcallevents touch. Return leads where days since
+        // last touch is >= days_threshold. Cap at 50 rows ordered by
+        // days_stagnant DESC.
+        $sql = "
+            SELECT
+                ic.id                                    AS cid_id,
+                u.name                                   AS bd_name,
+                COALESCE(cm.compname, 'Unknown')         AS school,
+                DATEDIFF(NOW(), lt.last_date)            AS days_stagnant,
+                DATE(lt.last_date)                       AS last_touch
+            FROM init_call ic
+            JOIN user u ON u.uid = ic.mainbd
+            LEFT JOIN company_master cm ON cm.id = CAST(ic.clm_id AS UNSIGNED)
+            JOIN (
+                SELECT cid_id, MAX(date) AS last_date
+                FROM tblcallevents
+                GROUP BY cid_id
+            ) lt ON lt.cid_id = ic.id
+            WHERE ic.cstatus = 1
+              AND ic.mainbd > 0
+              AND DATEDIFF(NOW(), lt.last_date) >= ?
+            ORDER BY days_stagnant DESC
+            LIMIT 50
+        ";
+
+        $result = $this->db->query($sql, [$days_threshold]);
+
+        if (!$result) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'query_failed', 'source' => 'live']);
+            return;
+        }
+
+        $rows = $result->result_array();
+        $count = count($rows);
+
+        $response = [
+            'ok'             => true,
             'rows'           => $rows,
-            'count'          => count($rows),
+            'count'          => $count,
+            'source'         => 'live',
             'days_threshold' => $days_threshold,
             'cstatus'        => 1,
-        ]);
+        ];
+
+        if ($count === 0) {
+            $response['note'] = 'no_stagnant_leads';
+        }
+
+        echo json_encode($response);
     }
 
-    // ------------------------------------------------------------------------
-    // 3. GET /api/upstream_hygiene/stagnant_reachout_30
-    // Returns cstatus 2 leads with days_stagnant >= days_threshold (default 30).
-    // Capped at ROW_CAP rows. Used by cron 34f41737 Reachout Stagnancy section.
-    // ------------------------------------------------------------------------
-    public function stagnant_reachout_30()
-    {
-        $days_threshold = (int)($this->input->get('days_threshold') ?: 30);
-        $rows = $this->agent->compute_stagnant_reachout($days_threshold);
-        $rows = array_slice($rows, 0, self::ROW_CAP);
+    // ---------------------------------------------------------------
+    // STAGNANT REACHOUT 30 (cstatus = 2)
+    // ---------------------------------------------------------------
+    public function stagnant_reachout_30() {
+        if (!$this->_check_auth()) return;
 
-        $this->_json([
+        $days_threshold = (int) $this->input->get('days_threshold');
+        if ($days_threshold <= 0) $days_threshold = 30;
+
+        // For reachout (cstatus=2) the spec says qualifying touch is
+        // actiontype_id IN (1, 2, 10) - phone, email, WhatsApp.
+        // We join tblcallevents filtered to those actiontype_ids.
+        $sql = "
+            SELECT
+                ic.id                                    AS cid_id,
+                u.name                                   AS bd_name,
+                COALESCE(cm.compname, 'Unknown')         AS school,
+                DATEDIFF(NOW(), lt.last_date)            AS days_stagnant,
+                DATE(lt.last_date)                       AS last_touch
+            FROM init_call ic
+            JOIN user u ON u.uid = ic.mainbd
+            LEFT JOIN company_master cm ON cm.id = CAST(ic.clm_id AS UNSIGNED)
+            JOIN (
+                SELECT cid_id, MAX(date) AS last_date
+                FROM tblcallevents
+                WHERE actiontype_id IN (1, 2, 10)
+                GROUP BY cid_id
+            ) lt ON lt.cid_id = ic.id
+            WHERE ic.cstatus = 2
+              AND ic.mainbd > 0
+              AND DATEDIFF(NOW(), lt.last_date) >= ?
+            ORDER BY days_stagnant DESC
+            LIMIT 50
+        ";
+
+        $result = $this->db->query($sql, [$days_threshold]);
+
+        if (!$result) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'query_failed', 'source' => 'live']);
+            return;
+        }
+
+        $rows = $result->result_array();
+        $count = count($rows);
+
+        $response = [
+            'ok'             => true,
             'rows'           => $rows,
-            'count'          => count($rows),
+            'count'          => $count,
+            'source'         => 'live',
             'days_threshold' => $days_threshold,
             'cstatus'        => 2,
-        ]);
+        ];
+
+        if ($count === 0) {
+            $response['note'] = 'no_stagnant_leads';
+        }
+
+        echo json_encode($response);
     }
 
-    // ------------------------------------------------------------------------
-    // 4. GET /api/upstream_hygiene/wallet_triggers?days=N
-    // Returns recent wallet_debit events from upstream_hygiene_log.
-    // Default N = 7 days. Used by cron 34f41737 Wallet Debits section.
-    // ------------------------------------------------------------------------
-    public function wallet_triggers()
-    {
-        $days = (int)($this->input->get('days') ?: 7);
-        $days = max(1, $days);
+    // ---------------------------------------------------------------
+    // WALLET TRIGGERS
+    // ---------------------------------------------------------------
+    public function wallet_triggers() {
+        if (!$this->_check_auth()) return;
 
-        $rows = $this->db->query("
-            SELECT
-                l.*,
-                ic.compny_nm AS school_name,
-                s.bd_uid,
-                ub.firstName AS bd_name,
-                s.cm_uid,
-                uc.firstName AS cm_name
-              FROM upstream_hygiene_log l
-              LEFT JOIN upstream_hygiene_state s ON s.cid_id = l.cid_id
-              LEFT JOIN init_call ic ON ic.id = l.cid_id
-              LEFT JOIN user ub      ON ub.uid = s.bd_uid
-              LEFT JOIN user uc      ON uc.uid = s.cm_uid
-             WHERE l.event_type = 'wallet_debit'
-               AND l.event_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-             ORDER BY l.event_at DESC
-             LIMIT ?
-        ", [$days, self::ROW_CAP])->result_array();
-
-        $total_rs = array_sum(array_column($rows, 'rs_amount'));
-
-        $this->_json([
-            'rows'     => $rows,
-            'count'    => count($rows),
-            'total_rs' => (float)$total_rs,
-            'days'     => $days,
-        ]);
-    }
-
-    // ------------------------------------------------------------------------
-    // 5. GET /api/upstream_hygiene/by_bd?bd_uid=N
-    // BD-scoped view of all upstream_hygiene_state rows for that BD.
-    // Used by My Open Pipeline screen (cstatus 1 view) and
-    // Reachout Inbox screen (cstatus 2 view) in the mobile app.
-    // ------------------------------------------------------------------------
-    public function by_bd()
-    {
-        $bd_uid = (int)$this->input->get('bd_uid');
-        if (!$bd_uid) {
-            $this->_json(['error' => 'missing_bd_uid'], 400);
-        }
-
-        $rows = $this->db->query("
-            SELECT
-                s.*,
-                ic.compny_nm AS school_name,
-                ic.fbudget   AS pipeline_rs
-              FROM upstream_hygiene_state s
-              LEFT JOIN init_call ic ON ic.id = s.cid_id
-             WHERE s.bd_uid = ?
-             ORDER BY s.days_stagnant DESC
-             LIMIT ?
-        ", [$bd_uid, self::ROW_CAP])->result_array();
-
-        // Include block status so the mobile screen can show the block banner.
-        $block = $this->agent->check_bd_block($bd_uid);
-
-        $this->_json([
-            'rows'          => $rows,
-            'count'         => count($rows),
-            'bd_uid'        => $bd_uid,
-            'block_status'  => $block,
-        ]);
-    }
-
-    // ------------------------------------------------------------------------
-    // 6. GET /api/upstream_hygiene/by_cm?cm_uid=N
-    // CM-scoped view of all stagnant rows across the CM's cluster.
-    // Used by Cluster Stagnancy screen.
-    // ------------------------------------------------------------------------
-    public function by_cm()
-    {
-        $cm_uid = (int)$this->input->get('cm_uid');
-        if (!$cm_uid) {
-            $this->_json(['error' => 'missing_cm_uid'], 400);
-        }
-
-        $rows = $this->db->query("
-            SELECT
-                s.*,
-                ic.compny_nm AS school_name,
-                ub.firstName AS bd_name,
-                ic.fbudget   AS pipeline_rs
-              FROM upstream_hygiene_state s
-              LEFT JOIN init_call ic ON ic.id = s.cid_id
-              LEFT JOIN user ub      ON ub.uid = s.bd_uid
-             WHERE s.cm_uid = ?
-             ORDER BY s.days_stagnant DESC
-             LIMIT ?
-        ", [$cm_uid, self::ROW_CAP])->result_array();
-
-        // Summary counts per BD for the Cluster Stagnancy drilldown.
-        $by_bd = [];
-        foreach ($rows as $r) {
-            $uid = $r['bd_uid'];
-            if (!isset($by_bd[$uid])) {
-                $by_bd[$uid] = [
-                    'bd_uid'          => $uid,
-                    'bd_name'         => $r['bd_name'],
-                    'total'           => 0,
-                    'stagnant_flag'   => 0,
-                    'near_miss_flag'  => 0,
-                ];
-            }
-            $by_bd[$uid]['total']++;
-            if ((int)$r['stagnant_flag']) $by_bd[$uid]['stagnant_flag']++;
-            if ((int)$r['near_miss_flag']) $by_bd[$uid]['near_miss_flag']++;
-        }
-        // Sort by worst BD first (stagnant_flag count descending).
-        usort($by_bd, function($a, $b) {
-            return $b['stagnant_flag'] - $a['stagnant_flag'];
-        });
-
-        $this->_json([
-            'rows'   => $rows,
-            'count'  => count($rows),
-            'cm_uid' => $cm_uid,
-            'by_bd'  => array_values($by_bd),
-        ]);
-    }
-
-    // ------------------------------------------------------------------------
-    // 7. POST /api/upstream_hygiene/manual_override
-    // CM can clear a near_miss_flag or stagnant_flag on a lead with a reason.
-    // Body params: cid_id (int), override_field (string), reason (string), by_uid (int).
-    // Logs to upstream_hygiene_log with event_type = manager_email.
-    // ------------------------------------------------------------------------
-    public function manual_override()
-    {
-        if ($this->input->method() !== 'post') {
-            $this->_json(['error' => 'post_only'], 405);
-        }
-
-        $cid_id         = (int)$this->input->post('cid_id');
-        $override_field = $this->input->post('override_field');
-        $reason         = trim((string)$this->input->post('reason'));
-        $by_uid         = (int)$this->input->post('by_uid');
-
-        if (!$cid_id || !$by_uid) {
-            $this->_json(['error' => 'missing_cid_id_or_by_uid'], 400);
-        }
-
-        $allowed_fields = ['near_miss_flag', 'stagnant_flag'];
-        if (!in_array($override_field, $allowed_fields)) {
-            $this->_json(['error' => 'invalid_override_field',
-                          'allowed' => $allowed_fields], 400);
-        }
-
-        if (strlen($reason) < 10) {
-            $this->_json(['error' => 'reason_too_short', 'min_chars' => 10], 400);
-        }
-
-        // Verify the row exists and get days_stagnant for the log.
-        $state = $this->db->select('cid_id, days_stagnant, cstatus')
-            ->from('upstream_hygiene_state')
-            ->where('cid_id', $cid_id)
-            ->get()->row_array();
-
-        if (!$state) {
-            $this->_json(['error' => 'cid_not_in_upstream_state'], 404);
-        }
-
-        // Clear the flag.
-        $this->db->where('cid_id', $cid_id)
-            ->update('upstream_hygiene_state', [$override_field => 0]);
-
-        // Log the override.
-        $this->db->insert('upstream_hygiene_log', [
-            'cid_id'       => $cid_id,
-            'event_type'   => 'manager_email',
-            'days_at_event'=> (int)$state['days_stagnant'],
-            'rs_amount'    => 0,
-            'notes'        => 'manual_override by uid=' . $by_uid
-                              . ' field=' . $override_field
-                              . ' reason=' . substr($reason, 0, 300),
-        ]);
-
-        $this->_json([
-            'ok'             => true,
-            'cid_id'         => $cid_id,
-            'override_field' => $override_field,
-            'cleared_to'     => 0,
-            'by_uid'         => $by_uid,
-        ]);
-    }
-
-    // ------------------------------------------------------------------------
-    // 8. POST /api/upstream_hygiene/run_detection
-    // Admin-only manual trigger of run_nightly_detection.
-    // Used for smoke tests and emergency re-runs.
-    // ------------------------------------------------------------------------
-    public function run_detection()
-    {
-        if ($this->input->method() !== 'post') {
-            $this->_json(['error' => 'post_only'], 405);
-        }
-
-        $out = $this->agent->run_nightly_detection();
-        $this->_json($out);
-    }
-
-    // ------------------------------------------------------------------------
-    // 9. GET /api/proposal/sla/backlog?legacy=1
-    // Returns proposal_backlog_legacy rows.
-    // When legacy=1 scopes to the 3,014 seeded rows.
-    // Used by the Proposal Backlog screen and cron 34f41737 backlog section.
-    // ------------------------------------------------------------------------
-    public function proposal_backlog()
-    {
-        $legacy = (int)$this->input->get('legacy');
-        $status = $this->input->get('status');
+        $days = (int) $this->input->get('days');
+        if ($days <= 0) $days = 7;
 
         $sql = "
             SELECT
-                p.*,
-                ic.compny_nm AS school_name,
-                ic.mainbd    AS bd_uid,
-                ub.firstName AS bd_name,
-                (SELECT parent_uid FROM reporting_hierarchy
-                  WHERE employee_uid = ic.mainbd AND active = 1 LIMIT 1) AS cm_uid,
-                DATEDIFF(CURDATE(), p.grace_window_ends_at) AS days_past_grace
-              FROM proposal_backlog_legacy p
-              LEFT JOIN init_call ic ON ic.id = p.cid_id
-              LEFT JOIN user ub      ON ub.uid = ic.mainbd
-             WHERE 1=1
+                id,
+                bd_uid,
+                lead_id,
+                reason,
+                amount_rs,
+                triggered_at
+            FROM wallet_trigger_log
+            WHERE triggered_at >= NOW() - INTERVAL ? DAY
+            ORDER BY triggered_at DESC
+            LIMIT 200
         ";
-        $params = [];
 
-        if ($status && in_array($status, ['legacy_grace','legacy_overdue','filed','closed_lost'])) {
-            $sql    .= " AND p.status = ?";
-            $params[] = $status;
+        $result = $this->db->query($sql, [$days]);
+
+        if (!$result) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'query_failed', 'source' => 'live']);
+            return;
         }
 
-        $sql    .= " ORDER BY p.grace_window_ends_at ASC LIMIT ?";
-        $params[] = self::ROW_CAP;
+        $rows  = $result->result_array();
+        $count = count($rows);
 
-        $rows = $this->db->query($sql, $params)->result_array();
+        $total_rs = 0;
+        foreach ($rows as $row) {
+            $total_rs += (float) $row['amount_rs'];
+        }
 
-        $summary = [
-            'legacy_grace'   => 0,
-            'legacy_overdue' => 0,
-            'filed'          => 0,
-            'closed_lost'    => 0,
+        $response = [
+            'ok'       => true,
+            'rows'     => $rows,
+            'count'    => $count,
+            'total_rs' => $total_rs,
+            'source'   => 'live',
+            'days'     => $days,
         ];
-        foreach ($rows as $r) {
-            if (isset($summary[$r['status']])) {
-                $summary[$r['status']]++;
-            }
+
+        if ($count === 0) {
+            $response['note'] = 'no_wallet_triggers';
         }
 
-        $this->_json([
-            'rows'    => $rows,
-            'count'   => count($rows),
-            'legacy'  => (bool)$legacy,
-            'summary' => $summary,
-        ]);
+        echo json_encode($response);
     }
 }

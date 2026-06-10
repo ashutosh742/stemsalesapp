@@ -41,6 +41,8 @@ class FunnelHygiene extends CI_Controller
     // ------------------------------------------------------------------------
     private function _require_bearer()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized'], 401);
@@ -77,7 +79,7 @@ class FunnelHygiene extends CI_Controller
         if (!$from || !$to) $this->_json(['error' => 'missing_range'], 400);
 
         $rows = $this->db->query("
-            SELECT f.*, ic.compny_nm AS school_name,
+            SELECT f.*, cm.compname AS school_name,
                    ub.firstName AS bd_name,
                    uc.firstName AS cm_name
               FROM funnel_change_log f
@@ -100,10 +102,11 @@ class FunnelHygiene extends CI_Controller
 
         $rows = $this->db->query("
             SELECT v.*,
-                   ic.compny_nm AS school_name,
+                   cm.compname AS school_name,
                    u.firstName AS bd_name
               FROM v_cm_hygiene_inbox v
               LEFT JOIN init_call ic ON ic.id = v.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
               LEFT JOIN user u       ON u.uid = v.bd_uid
              WHERE v.cm_uid = ?
              ORDER BY v.opened_at DESC
@@ -115,9 +118,10 @@ class FunnelHygiene extends CI_Controller
     {
         $days = (int)($this->input->get('days') ?: 7);
         $rows = $this->db->query("
-            SELECT n.*, ic.compny_nm AS school_name, u.firstName AS bd_name
+            SELECT n.*, cm.compname AS school_name, u.firstName AS bd_name
               FROM no_purpose_task_log n
               LEFT JOIN init_call ic ON ic.id = n.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
               LEFT JOIN user u       ON u.uid = n.bd_uid
              WHERE n.resolved = 0
                AND n.detected_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
@@ -130,9 +134,10 @@ class FunnelHygiene extends CI_Controller
     {
         $days = (int)($this->input->get('days') ?: 7);
         $rows = $this->db->query("
-            SELECT p.*, ic.compny_nm AS school_name, u.firstName AS bd_name
+            SELECT p.*, cm.compname AS school_name, u.firstName AS bd_name
               FROM phantom_task_log p
               LEFT JOIN init_call ic ON ic.id = p.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
               LEFT JOIN user u       ON u.uid = p.bd_uid
              WHERE p.resolved = 0
                AND p.detected_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
@@ -144,7 +149,7 @@ class FunnelHygiene extends CI_Controller
     public function weekly_gap()
     {
         $mgr = (int)$this->input->get('manager_uid');
-        $sql = "SELECT w.*, ic.compny_nm AS school_name, u.firstName AS bd_name
+        $sql = "SELECT w.*, cm.compname AS school_name, u.firstName AS bd_name
                   FROM weekly_touch_gap w
                   LEFT JOIN init_call ic ON ic.id = w.cid_id
                   LEFT JOIN user u       ON u.uid = w.bd_uid
@@ -159,7 +164,7 @@ class FunnelHygiene extends CI_Controller
     public function stagnant_22()
     {
         $mgr = (int)$this->input->get('manager_uid');
-        $sql = "SELECT s.*, ic.compny_nm AS school_name,
+        $sql = "SELECT s.*, cm.compname AS school_name,
                        u.firstName AS bd_name, ic.fbudget AS pipeline_rs
                   FROM stagnancy_22_log s
                   LEFT JOIN init_call ic ON ic.id = s.cid_id
@@ -187,7 +192,7 @@ class FunnelHygiene extends CI_Controller
         $verdict = $this->input->get('verdict') ?: 'pending';
         $limit   = (int)($this->input->get('limit') ?: 50);
         $rows = $this->db->query("
-            SELECT d.*, ic.compny_nm AS school_name, u.firstName AS bd_name
+            SELECT d.*, cm.compname AS school_name, u.firstName AS bd_name
               FROM dm_verification d
               LEFT JOIN init_call ic ON ic.id = d.cid_id
               LEFT JOIN user u       ON u.uid = d.bd_uid

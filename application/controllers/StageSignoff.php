@@ -30,6 +30,8 @@ class StageSignoff_api extends CI_Controller {
 
     /* ---------- auth helper ---------- */
     private function _auth_check() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $headers = $this->input->request_headers();
         $auth = isset($headers['Authorization']) ? $headers['Authorization'] : '';
         $expected = 'Bearer ' . (defined('STEM_DIGEST_TOKEN') ? STEM_DIGEST_TOKEN : getenv('STEM_DIGEST_TOKEN'));

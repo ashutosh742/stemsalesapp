@@ -214,15 +214,17 @@ class Anaya_reports extends CI_Controller
             $week_start = date('Y-m-d', strtotime('monday this week'));
             $week_end   = date('Y-m-d', strtotime('sunday this week'));
 
+            // audit fix 2026-06-06: use mainbd (not assigned_bd_uid), cstatus=13 for closure won
+            //   init_call has no closed col; use cstatus=13 (closure_pipeline done)
             $rows = $this->db->query(
                 "SELECT
                      DATE(created_at)        AS call_date,
                      COUNT(*)                AS total_calls,
-                     SUM(current_status_id = 6) AS positives,
-                     SUM(current_status_id = 7) AS proposals_sent,
-                     SUM(closed = 1)            AS closed_won
+                     SUM(cstatus = 6)        AS positives,
+                     SUM(cstatus = 7)        AS proposals_sent,
+                     SUM(cstatus = 13)       AS closed_won
                  FROM init_call
-                 WHERE assigned_bd_uid = ?
+                 WHERE mainbd = ?
                    AND DATE(created_at) BETWEEN ? AND ?
                  GROUP BY DATE(created_at)
                  ORDER BY call_date ASC",
@@ -299,11 +301,11 @@ class Anaya_reports extends CI_Controller
                 "SELECT
                      DATE_FORMAT(created_at, '%Y-%m-%d') AS call_date,
                      COUNT(*)                             AS total_calls,
-                     SUM(current_status_id = 6)           AS positives,
-                     SUM(current_status_id = 7)           AS proposals_sent,
-                     SUM(closed = 1)                      AS closed_won
+                     SUM(cstatus = 6)           AS positives,
+                     SUM(cstatus = 7)           AS proposals_sent,
+                     SUM(cstatus = 13)                    AS closed_won
                  FROM init_call
-                 WHERE assigned_bd_uid = ?
+                 WHERE mainbd = ?
                    AND DATE(created_at) BETWEEN ? AND ?
                  GROUP BY DATE(created_at)
                  ORDER BY call_date ASC",

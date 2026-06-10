@@ -5,7 +5,7 @@
  
  
 -// Add these lines
--$config['openai_api_key'] = 'sk-svcacct-REDACTED';
+-$config['openai_api_key'] = 'REDACTED_KEY_SEE_SERVER_CONFIG';
 +// Secrets loader: pulls from env / /etc/stemapp/secrets.env. Never hardcoded.
 +require_once APPPATH . 'config/secrets.php';
 +
@@ -19,7 +19,7 @@
      
      public function call_chatgpt_api_with_context($prompt, $previousMessages, $context) {
 -        // Configuration for OpenAI API
--        $api_key = 'sk-svcacct-REDACTED';// Use environment variable or config
+-        $api_key = 'REDACTED_KEY_SEE_SERVER_CONFIG';// Use environment variable or config
 +        // Read from config (which is loaded from env / /etc/stemapp/secrets.env)
 +        $api_key = $this->config->item('openai_api_key');
          $api_url = 'https://api.openai.com/v1/chat/completions';

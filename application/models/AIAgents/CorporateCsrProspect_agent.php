@@ -313,9 +313,10 @@ class CorporateCsrProspect_model extends CI_Model {
     private function _clusters_for_bd($bd_uid, $target_plan_date) {
         // Tomorrow's planned areas
         $rows = $this->db->query(
-            "SELECT DISTINCT ic.compny_loction AS area_name, ic.cluster_id, ic.dist_name AS district, ic.state_name AS state
+            "SELECT DISTINCT cm.address AS area_name, ic.cluster_id, cm.city AS district, cm.state AS state
              FROM daily_planner dp
-             JOIN init_call ic ON ic.cid_id = dp.cid_id
+             JOIN init_call ic ON ic.id = dp.cid_id
+             LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
              WHERE dp.uid = ? AND dp.plan_date = ?",
             [$bd_uid, $target_plan_date]
         )->result_array();
@@ -324,9 +325,10 @@ class CorporateCsrProspect_model extends CI_Model {
 
         // Fallback: BD home cluster + districts touched in last 7 days
         $fallback = $this->db->query(
-            "SELECT DISTINCT ic.cluster_id, ic.dist_name AS district, ic.state_name AS state
+            "SELECT DISTINCT ic.cluster_id, cm.city AS district, cm.state AS state
              FROM tblcallevents ev
-             JOIN init_call ic ON ic.cid_id = ev.cid_id
+             JOIN init_call ic ON ic.id = ev.cid_id
+             LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
              WHERE ev.uid = ?
                AND ev.event_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
              LIMIT 3",

@@ -19,6 +19,8 @@ class MonthlyLeadReviewController extends CI_Controller
 
     private function _require_bearer()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization', true);
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized'], 401);

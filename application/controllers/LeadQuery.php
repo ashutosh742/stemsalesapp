@@ -61,9 +61,10 @@ class Lead_query extends CI_Controller
         $status    = (string)$this->input->get('status');
         if ($owner_uid <= 0) return $this->_json(['error' => 'owner_uid_required'], 400);
 
-        $this->db->select('q.*, ic.school_name')
+        $this->db->select('q.*, cm.compname AS school_name')
             ->from('lead_query_checklist q')
             ->join('init_call ic', 'ic.id = q.cid_id')
+            ->join('company_master cm', 'cm.id = ic.cmpid_id', 'left')
             ->where('q.owner_uid', $owner_uid);
         if ($status) {
             $this->db->where('q.status', $status);

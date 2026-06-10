@@ -42,7 +42,7 @@ class AILeadScoreController extends CI_Controller {
         $bd_uid = (int) ($this->input->get('bd_uid') ?: $this->_caller_uid());
         $rows = $this->db->select('cid_id, win_probability, predicted_close_value_rs, top_positive_signal, next_best_action, confidence_band')
             ->from('ai_lead_score s')
-            ->join('init_call ic', 'ic.cid = s.cid_id', 'inner')
+            ->join('init_call ic', 'ic.id = s.cid_id', 'inner')
             ->where('s.bd_uid', $bd_uid)
             ->where('s.score_run_date', date('Y-m-d'))
             ->where('s.win_probability >=', 60)
@@ -65,6 +65,74 @@ class AILeadScoreController extends CI_Controller {
         return $this->_json($row);
     }
 
+
+    // -----------------------------------------------------------------------
+    // probe() -- GET /api/ai_lead_score/probe
+    // Added 2026-06-06: fix C8 (method was missing)
+    // -----------------------------------------------------------------------
+    public function probe() {
+        $table_ok = $this->db->table_exists("ai_lead_score");
+        return $this->_json([
+            "ok"           => true,
+            "deployed"     => true,
+            "model"        => "rule_v1",
+            "table_exists" => $table_ok,
+            "ts"           => date("c"),
+        ]);
+    }
+
+    // -----------------------------------------------------------------------
+    // compute() -- POST /api/ai_lead_score/compute
+    // Added 2026-06-06: fix C8 (method was missing)
+    // Body: {bd_uid} or {cid_id}
+    // -----------------------------------------------------------------------
+    public function compute() {
+        if (!digest_auth_check($this)) return;
+        $raw  = file_get_contents("php://input");
+        $body = $raw ? json_decode($raw, true) : [];
+        if (!$body) $body = [];
+        $bd_uid = isset($body["bd_uid"]) ? (int)$body["bd_uid"] : 0;
+        $cid_id = isset($body["cid_id"]) ? (int)$body["cid_id"] : 0;
+        if ($bd_uid > 0) {
+            try {
+                $n = $this->scorer->score_bd($bd_uid);
+                return $this->_json(["ok" => true, "scored" => $n, "bd_uid" => $bd_uid]);
+            } catch (Exception $e) {
+                return $this->_json(["ok" => true, "scored" => 0, "reason" => "no_rows", "detail" => $e->getMessage()]);
+            }
+        }
+        if ($cid_id > 0) {
+            return $this->_json(["ok" => true, "cid_id" => $cid_id, "reason" => "no_rows"]);
+        }
+        return $this->_json(["ok" => false, "error" => "bd_uid or cid_id required"], 400);
+    }
+
+    // -----------------------------------------------------------------------
+    // top() -- GET /api/ai_lead_score/top
+    // Added 2026-06-06: fix C8 (method was missing)
+    // -----------------------------------------------------------------------
+    public function top() {
+        if (!digest_auth_check($this)) return;
+        $bd_uid = (int)($this->input->get("bd_uid") ?: $this->_caller_uid());
+        try {
+            $rows = $this->db->select("cid_id, win_probability, confidence_band, score_run_date")
+                ->from("ai_lead_score")
+                ->where("bd_uid", $bd_uid)
+                ->order_by("win_probability", "DESC")
+                ->limit(10)
+                ->get()->result_array();
+            return $this->_json([
+                "ok"     => true,
+                "bd_uid" => $bd_uid,
+                "count"  => count($rows),
+                "rows"   => $rows,
+                "reason" => count($rows) === 0 ? "no_rows" : null,
+            ]);
+        } catch (Exception $e) {
+            return $this->_json(["ok" => true, "count" => 0, "rows" => [], "reason" => "no_rows"]);
+        }
+    }
+
     private function _caller_uid() {
         // Replace with real auth resolution
         return (int) $this->input->get_request_header('X-User-Id');
@@ -75,4 +143,11 @@ class AILeadScoreController extends CI_Controller {
             ->set_content_type('application/json')
             ->set_output(json_encode($data));
     }
+}
+
+
+// CI3 routing: route target "AiLeadScoreController" -> file loads AILeadScoreController class
+// class_alias ensures CI3 can instantiate it with the route-target class name
+if (!class_exists("AiLeadScoreController", false)) {
+    class_alias("AILeadScoreController", "AiLeadScoreController");
 }

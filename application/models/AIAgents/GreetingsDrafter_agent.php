@@ -136,10 +136,11 @@ class Greetings_drafter_agent extends CI_Model
 
         $transition = $this->db->query("
             SELECT lpl.cid_id, lpl.transition_by_uid AS bd_uid,
-                   ic.compny_nm AS school_name, ic.fbudget AS deal_value_rs,
+                   cm.compname AS school_name, ic.fbudget AS deal_value_rs,
                    ic.cluster_id
               FROM lead_progression_log lpl
               INNER JOIN init_call ic ON ic.id = lpl.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
              WHERE lpl.id = ?
                AND lpl.to_cstatus = 12
              LIMIT 1
@@ -159,6 +160,7 @@ class Greetings_drafter_agent extends CI_Model
             SELECT sc.id AS contact_id, sc.bd_uid_owner, ic.id AS school_id
               FROM stakeholder_contact sc
               INNER JOIN init_call ic ON ic.id = sc.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
              WHERE sc.cid_id = ?
                AND sc.active = 1
         ", [(int)$transition['cid_id']])->result_array();
@@ -418,9 +420,10 @@ class Greetings_drafter_agent extends CI_Model
         // Find all active stakeholders who have had at least one tblcallevents touch.
         $contacts = $this->db->query("
             SELECT sc.id AS contact_id, sc.bd_uid_owner, sc.cid_id AS school_id,
-                   sc.contact_name, sc.role_label, ic.compny_nm AS school_name
+                   sc.contact_name, sc.role_label, cm.compname AS school_name
               FROM stakeholder_contact sc
               INNER JOIN init_call ic ON ic.id = sc.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
              WHERE sc.active = 1
                AND EXISTS (
                    SELECT 1 FROM tblcallevents t WHERE t.cid_id = sc.cid_id LIMIT 1
@@ -478,9 +481,10 @@ class Greetings_drafter_agent extends CI_Model
         // Fetch contact and school details for the prompt.
         $contact = $this->db->query("
             SELECT sc.contact_name, sc.role_label, sc.preferred_language,
-                   ic.compny_nm AS school_name, ic.city, u.firstName AS bd_name
+                   cm.compname AS school_name, cm.city, u.firstName AS bd_name
               FROM stakeholder_contact sc
               INNER JOIN init_call ic ON ic.id = sc.cid_id
+              LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
               INNER JOIN user u ON u.uid = sc.bd_uid_owner
              WHERE sc.id = ?
              LIMIT 1

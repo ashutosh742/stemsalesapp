@@ -33,6 +33,8 @@ class MomV2Controller extends CI_Controller {
     }
 
     private function _check_auth() {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $session_uid = $this->session->userdata('uid');

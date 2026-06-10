@@ -22,11 +22,11 @@ Rotate the leaked OpenAI and DeepSeek keys and move them out of source code.
 1. **OpenAI** — Log in to https://platform.openai.com/api-keys
    - Create new project-scoped key for STEM CRM
    - Copy it (you only see it once)
-   - **DELETE** the old key `sk-svcacct-Wj0Ip7ChL2sTuDHkHaH...` immediately after
+   - **DELETE** the old key `REDACTED_KEY_SEE_SERVER_CONFIG...` immediately after
 2. **DeepSeek** — Log in to https://platform.deepseek.com
    - Create new key
    - Copy it
-   - **REVOKE** the old key `sk-f56ad619214642b5b31a8f7436685065`
+   - **REVOKE** the old key `REDACTED_KEY_SEE_SERVER_CONFIG`
 
 The old keys must be revoked at the provider BEFORE the new ones are deployed, otherwise anyone who scraped the GitHub branch can keep using them.
 
@@ -47,8 +47,8 @@ sudo nano /etc/stemapp/secrets.env
 Paste:
 
 ```
-openai_api_key=sk-PASTE_NEW_OPENAI_KEY_HERE
-deepseek_api_key=sk-PASTE_NEW_DEEPSEEK_KEY_HERE
+openai_api_key=REDACTED_KEY_SEE_SERVER_CONFIG
+deepseek_api_key=REDACTED_KEY_SEE_SERVER_CONFIG
 ```
 
 Lock it down:
@@ -130,7 +130,7 @@ Options:
 
 ```bash
 # Already done: the current production branch HEAD 92af6c0 has the keys
-# redacted to "sk-REDACTED-..." style placeholders. The history before that
+# redacted to "REDACTED_KEY_SEE_SERVER_CONFIG..." style placeholders. The history before that
 # point does not exist because it was an orphan branch.
 #
 # So in fact the production branch is already clean. Nothing more needed.

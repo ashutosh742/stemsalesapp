@@ -158,25 +158,67 @@ class Gap_reports_api extends CI_Controller {
         $w   = $this->_date_window();
 
         try {
-            // Prefer review_v2_session; fall back to review_session
+            // Use review_session_v2 (actual table on staging); fall back to others if missing
             $table = null;
-            if ($this->db->table_exists('review_v2_session')) {
+            $is_v2 = false;
+            if ($this->db->table_exists('review_session_v2')) {
+                $table = 'review_session_v2';
+                $is_v2 = true;
+            } elseif ($this->db->table_exists('review_v2_session')) {
                 $table = 'review_v2_session';
             } elseif ($this->db->table_exists('review_session')) {
                 $table = 'review_session';
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
-            $sql = "SELECT id, bd_uid, manager_uid, review_date, score, grade, status
-                    FROM {$table}
-                    WHERE (? = 0 OR bd_uid = ?)
-                      AND review_date BETWEEN ? AND ?
-                    ORDER BY review_date DESC
-                    LIMIT 200";
+            if ($is_v2) {
+                $sql = "SELECT id,
+                               to_uid          AS bd_uid,
+                               by_uid          AS manager_uid,
+                               window_from     AS review_date,
+                               manager_avg_rating AS score,
+                               overall_band    AS grade,
+                               status
+                        FROM {$table}
+                        WHERE (? = 0 OR to_uid = ?)
+                          AND window_from BETWEEN ? AND ?
+                        ORDER BY window_from DESC
+                        LIMIT 200";
+            } else {
+                $sql = "SELECT id, bd_uid, manager_uid, review_date, score, grade, status
+                        FROM {$table}
+                        WHERE (? = 0 OR bd_uid = ?)
+                          AND review_date BETWEEN ? AND ?
+                        ORDER BY review_date DESC
+                        LIMIT 200";
+            }
             $rows = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
 
             $this->_json([
@@ -213,8 +255,31 @@ class Gap_reports_api extends CI_Controller {
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
             // Aggregate total duration per uid per day
@@ -257,9 +322,40 @@ class Gap_reports_api extends CI_Controller {
         $w      = $this->_date_window();
 
         try {
-            if (!$this->db->table_exists('leave_request')) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+            // Staging has leave_requests (plural) using user_id, not leave_request with uid
+            $table = null;
+            if ($this->db->table_exists('leave_requests')) {
+                $table = 'leave_requests';
+            } elseif ($this->db->table_exists('leave_request')) {
+                $table = 'leave_request';
+            }
+
+            if (!$table) {
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
             $params = [$uid, $uid, $w['from'], $w['to']];
@@ -269,14 +365,31 @@ class Gap_reports_api extends CI_Controller {
                 $params[] = $status;
             }
 
-            $sql = "SELECT id, uid, start_date, end_date, leave_type, status, approved_by,
-                           DATEDIFF(end_date, start_date) + 1 AS days_count
-                    FROM leave_request
-                    WHERE (? = 0 OR uid = ?)
-                      AND start_date BETWEEN ? AND ?
-                      {$status_clause}
-                    ORDER BY start_date DESC
-                    LIMIT 200";
+            if ($table === 'leave_requests') {
+                $sql = "SELECT id,
+                               user_id   AS uid,
+                               start_date,
+                               end_date,
+                               leave_type,
+                               status,
+                               approved_by,
+                               DATEDIFF(end_date, start_date) + 1 AS days_count
+                        FROM {$table}
+                        WHERE (? = 0 OR user_id = ?)
+                          AND start_date BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY start_date DESC
+                        LIMIT 200";
+            } else {
+                $sql = "SELECT id, uid, start_date, end_date, leave_type, status, approved_by,
+                               DATEDIFF(end_date, start_date) + 1 AS days_count
+                        FROM {$table}
+                        WHERE (? = 0 OR uid = ?)
+                          AND start_date BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY start_date DESC
+                        LIMIT 200";
+            }
             $rows = $this->db->query($sql, $params)->result_array();
 
             $this->_json([
@@ -317,12 +430,17 @@ class Gap_reports_api extends CI_Controller {
 
             } elseif ($this->db->table_exists('tblcallevents')) {
                 $source = 'tblcallevents(actiontype_id=5)';
-                $sql = "SELECT event_id, bd_uid, lead_id, call_at, duration
+                // tblcallevents schema: id, user_id, cid_id, actiontype_id, date, ... (no event_id/bd_uid/lead_id/call_at/duration)
+                $sql = "SELECT id        AS event_id,
+                               user_id   AS bd_uid,
+                               cid_id    AS lead_id,
+                               `date`    AS call_at,
+                               0         AS duration
                         FROM tblcallevents
                         WHERE actiontype_id = 5
-                          AND (? = 0 OR bd_uid = ?)
-                          AND DATE(call_at) BETWEEN ? AND ?
-                        ORDER BY call_at DESC
+                          AND (? = 0 OR user_id = ?)
+                          AND DATE(`date`) BETWEEN ? AND ?
+                        ORDER BY `date` DESC
                         LIMIT 200";
                 $rows = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
 
@@ -360,11 +478,19 @@ class Gap_reports_api extends CI_Controller {
 
             if ($this->db->table_exists('star_rating')) {
                 $source = 'star_rating';
-                $sql = "SELECT taskid, uid, task_date, star_score
+                // star_rating schema: id, date, user_id, periods, question, star, remarks, feedback_by, created_at (no taskid/uid/task_date/star_score)
+                $sql = "SELECT id          AS taskid,
+                               user_id     AS uid,
+                               `date`      AS task_date,
+                               star        AS star_score,
+                               periods,
+                               question,
+                               remarks,
+                               feedback_by
                         FROM star_rating
-                        WHERE (? = 0 OR uid = ?)
-                          AND task_date BETWEEN ? AND ?
-                        ORDER BY task_date DESC
+                        WHERE (? = 0 OR user_id = ?)
+                          AND `date` BETWEEN ? AND ?
+                        ORDER BY `date` DESC
                         LIMIT 200";
                 $rows = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
 
@@ -479,8 +605,31 @@ class Gap_reports_api extends CI_Controller {
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
             $params = [$cid_id, $cid_id, $w['from'], $w['to']];
@@ -490,14 +639,54 @@ class Gap_reports_api extends CI_Controller {
                 $params[] = (int)$flagged;
             }
 
-            $sql = "SELECT id, cid_id, source_pk, remark_text, flagged, created_at
-                    FROM {$table}
-                    WHERE (? = 0 OR cid_id = ?)
-                      AND DATE(created_at) BETWEEN ? AND ?
-                      {$flagged_clause}
-                    ORDER BY created_at DESC
-                    LIMIT 200";
+            // special_remarks schema: id, uid, cid_id, remark_text, created_at (no source_pk, no flagged column)
+            if ($table === 'special_remarks') {
+                // Drop the unsupported flagged filter for this schema
+                $params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                $sql = "SELECT id, cid_id, uid AS source_pk, remark_text, 0 AS flagged, created_at
+                        FROM {$table}
+                        WHERE (? = 0 OR cid_id = ?)
+                          AND DATE(created_at) BETWEEN ? AND ?
+                        ORDER BY created_at DESC
+                        LIMIT 200";
+            } else {
+                $sql = "SELECT id, cid_id, source_pk, remark_text, flagged, created_at
+                        FROM {$table}
+                        WHERE (? = 0 OR cid_id = ?)
+                          AND DATE(created_at) BETWEEN ? AND ?
+                          {$flagged_clause}
+                        ORDER BY created_at DESC
+                        LIMIT 200";
+            }
             $rows = $this->db->query($sql, $params)->result_array();
+
+            // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+            // special_remarks TABLE exists but is empty (0 rows).
+            // Real data is in tblcallevents.special_remarks COLUMN (8,282 rows).
+            // When table query returns 0, fall back to the column.
+            if (empty($rows)) {
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $table = 'tblcallevents.special_remarks';
+                } catch (Exception $fe) {
+                    log_message('error', 'CLOSEOUT_I GAP-3 fallback error: ' . $fe->getMessage());
+                }
+            }
+            // === END CLOSEOUT_I GAP-3 ===
 
             $this->_json([
                 'ok'     => true,
@@ -532,24 +721,82 @@ class Gap_reports_api extends CI_Controller {
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
+            // travel_advance schema: user_id (not uid), date (not requested_at), cluster_apr/admin_apr/account_apr (no single status col), cash (not amount), consumed_at (closest to settled_at)
             $params = [$uid, $uid, $w['from'], $w['to']];
             $status_clause = '';
-            if ($status !== '') {
+            if ($status !== '' && $table === 'travel_advance') {
+                // Map common status strings to the tri-stage approval flags
+                $s = strtolower($status);
+                if ($s === 'approved' || $s === 'account_approved') {
+                    $status_clause = ' AND account_apr = 1';
+                } elseif ($s === 'pending' || $s === 'pending_admin' || $s === 'pending_cluster') {
+                    $status_clause = ' AND account_apr = 0';
+                } elseif ($s === 'admin_approved') {
+                    $status_clause = ' AND admin_apr = 1';
+                } elseif ($s === 'cluster_approved') {
+                    $status_clause = ' AND cluster_apr = 1';
+                }
+            } elseif ($status !== '') {
                 $status_clause = ' AND status = ?';
                 $params[] = $status;
             }
 
-            $sql = "SELECT id, uid, amount, status, requested_at, settled_at
-                    FROM {$table}
-                    WHERE (? = 0 OR uid = ?)
-                      AND DATE(requested_at) BETWEEN ? AND ?
-                      {$status_clause}
-                    ORDER BY requested_at DESC
-                    LIMIT 200";
+            if ($table === 'travel_advance') {
+                $sql = "SELECT id,
+                               user_id   AS uid,
+                               cash      AS amount,
+                               CASE
+                                   WHEN account_apr = 1 THEN 'account_approved'
+                                   WHEN admin_apr   = 1 THEN 'admin_approved'
+                                   WHEN cluster_apr = 1 THEN 'cluster_approved'
+                                   ELSE 'pending'
+                               END AS status,
+                               `date`       AS requested_at,
+                               consumed_at  AS settled_at,
+                               purpose,
+                               consumed_status
+                        FROM {$table}
+                        WHERE (? = 0 OR user_id = ?)
+                          AND DATE(`date`) BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY `date` DESC
+                        LIMIT 200";
+            } else {
+                $sql = "SELECT id, uid, amount, status, requested_at, settled_at
+                        FROM {$table}
+                        WHERE (? = 0 OR uid = ?)
+                          AND DATE(requested_at) BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY requested_at DESC
+                        LIMIT 200";
+            }
             $rows = $this->db->query($sql, $params)->result_array();
 
             $this->_json([
@@ -578,9 +825,15 @@ class Gap_reports_api extends CI_Controller {
     //   plan_compliance_by_uid — per-uid plan vs actual day counts
     // ================================================================
     public function graph_analysis_summary() {
+        // PATCHED 2026-06-06 by Audit C: replaced broken view/tblclient fallbacks
+        // with direct init_call and tblcallevents queries that actually exist on staging.
         $this->_auth();
         $uid = (int)($this->input->get('uid') ?: 0);
         $w   = $this->_date_window();
+
+        $uid_clause        = ($uid > 0) ? 'AND ic.mainbd = ?' : '';
+        $uid_bind_single   = ($uid > 0) ? [$uid] : [];
+        $uid_bind_double   = ($uid > 0) ? [$uid, $uid] : [];
 
         $out = [
             'ok'   => true,
@@ -589,119 +842,93 @@ class Gap_reports_api extends CI_Controller {
             'to'   => $w['to'],
         ];
 
-        // --- 1. funnel_by_stage ---
+        // --- 1. funnel_by_stage: live stage counts from init_call ---
         try {
-            if ($this->db->table_exists('v_funnel_by_stage')) {
-                $sql  = "SELECT * FROM v_funnel_by_stage WHERE ref_date BETWEEN ? AND ? LIMIT 200";
-                $out['funnel_by_stage'] = $this->db->query($sql, [$w['from'], $w['to']])->result_array();
-            } elseif ($this->db->table_exists('tblclient')) {
-                $sql  = "SELECT pipeline_stage AS stage, COUNT(*) AS cnt
-                         FROM tblclient
-                         WHERE (? = 0 OR bd_uid = ?)
-                           AND DATE(created_at) BETWEEN ? AND ?
-                         GROUP BY pipeline_stage
-                         ORDER BY cnt DESC
-                         LIMIT 200";
-                $out['funnel_by_stage'] = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
-            } else {
-                $out['funnel_by_stage'] = ['note' => 'tables_not_seeded_yet'];
-            }
+            $sql = "SELECT ic.cstatus AS stage,
+                           COALESCE(s.name, CONCAT('cstatus_', ic.cstatus)) AS stage_label,
+                           COUNT(*) AS cnt
+                    FROM init_call ic
+                    LEFT JOIN status s ON s.id = ic.cstatus
+                    WHERE 1=1 $uid_clause
+                    GROUP BY ic.cstatus
+                    ORDER BY cnt DESC
+                    LIMIT 50";
+            $out['funnel_by_stage'] = $this->db->query($sql, $uid_bind_single)->result_array();
         } catch (Exception $e) {
             $out['funnel_by_stage'] = ['note' => 'db_error', 'detail' => $e->getMessage()];
         }
 
-        // --- 2. conversion_by_week ---
+        // --- 2. conversion_by_week: won leads (cstatus=12) grouped by creation week ---
         try {
-            if ($this->db->table_exists('v_conversion_by_week')) {
-                $sql  = "SELECT * FROM v_conversion_by_week WHERE week_start BETWEEN ? AND ? LIMIT 200";
-                $out['conversion_by_week'] = $this->db->query($sql, [$w['from'], $w['to']])->result_array();
-            } elseif ($this->db->table_exists('tblclient')) {
-                $sql  = "SELECT YEARWEEK(created_at, 1) AS yw,
-                                SUM(CASE WHEN pipeline_stage = 'WON' THEN 1 ELSE 0 END)  AS won,
-                                COUNT(*)                                                   AS total,
-                                ROUND(100 * SUM(CASE WHEN pipeline_stage = 'WON' THEN 1 ELSE 0 END) / COUNT(*), 2) AS pct
-                         FROM tblclient
-                         WHERE (? = 0 OR bd_uid = ?)
-                           AND DATE(created_at) BETWEEN ? AND ?
-                         GROUP BY YEARWEEK(created_at, 1)
-                         ORDER BY yw DESC
-                         LIMIT 200";
-                $out['conversion_by_week'] = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
-            } else {
-                $out['conversion_by_week'] = ['note' => 'tables_not_seeded_yet'];
-            }
+            $sql = "SELECT YEARWEEK(ic.createDate, 1) AS yw,
+                           SUM(ic.cstatus = 12)        AS won,
+                           COUNT(*)                    AS total,
+                           ROUND(100.0 * SUM(ic.cstatus = 12) / COUNT(*), 2) AS pct
+                    FROM init_call ic
+                    WHERE ic.createDate BETWEEN ? AND ?
+                    $uid_clause
+                    GROUP BY yw
+                    ORDER BY yw DESC
+                    LIMIT 52";
+            $params = array_merge([$w['from'], $w['to']], $uid_bind_single);
+            $out['conversion_by_week'] = $this->db->query($sql, $params)->result_array();
         } catch (Exception $e) {
             $out['conversion_by_week'] = ['note' => 'db_error', 'detail' => $e->getMessage()];
         }
 
-        // --- 3. won_lost_by_bd ---
+        // --- 3. won_lost_by_bd: wins and losses per BD from init_call ---
         try {
-            if ($this->db->table_exists('v_won_lost_by_bd')) {
-                $sql  = "SELECT * FROM v_won_lost_by_bd WHERE ref_date BETWEEN ? AND ? LIMIT 200";
-                $out['won_lost_by_bd'] = $this->db->query($sql, [$w['from'], $w['to']])->result_array();
-            } elseif ($this->db->table_exists('tblclient')) {
-                $sql  = "SELECT bd_uid,
-                                SUM(CASE WHEN pipeline_stage = 'WON'  THEN 1 ELSE 0 END) AS won,
-                                SUM(CASE WHEN pipeline_stage = 'LOST' THEN 1 ELSE 0 END) AS lost,
-                                COUNT(*) AS total
-                         FROM tblclient
-                         WHERE (? = 0 OR bd_uid = ?)
-                           AND DATE(created_at) BETWEEN ? AND ?
-                         GROUP BY bd_uid
-                         ORDER BY total DESC
-                         LIMIT 200";
-                $out['won_lost_by_bd'] = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
-            } else {
-                $out['won_lost_by_bd'] = ['note' => 'tables_not_seeded_yet'];
-            }
+            $sql = "SELECT ic.mainbd AS bd_uid,
+                           u.name    AS bd_name,
+                           SUM(ic.cstatus = 12) AS won,
+                           SUM(ic.cstatus = 13) AS lost,
+                           COUNT(*)             AS total
+                    FROM init_call ic
+                    LEFT JOIN user u ON u.uid = ic.mainbd
+                    WHERE 1=1 $uid_clause
+                    GROUP BY ic.mainbd
+                    ORDER BY won DESC
+                    LIMIT 50";
+            $out['won_lost_by_bd'] = $this->db->query($sql, $uid_bind_single)->result_array();
         } catch (Exception $e) {
             $out['won_lost_by_bd'] = ['note' => 'db_error', 'detail' => $e->getMessage()];
         }
 
-        // --- 4. mom_quality_by_week ---
+        // --- 4. mom_quality_by_week: MOM count from mom_data grouped by week ---
+        // FIX pass2 2026-06-06: mom_data uses cdate (not created_at) and user_id (not bd_id)
         try {
-            if ($this->db->table_exists('v_mom_quality_by_week')) {
-                $sql  = "SELECT * FROM v_mom_quality_by_week WHERE week_start BETWEEN ? AND ? LIMIT 200";
-                $out['mom_quality_by_week'] = $this->db->query($sql, [$w['from'], $w['to']])->result_array();
-            } elseif ($this->db->table_exists('meeting_mom')) {
-                $sql  = "SELECT YEARWEEK(mom_date, 1) AS yw,
-                                COUNT(*)               AS total_moms,
-                                SUM(action_count)      AS total_actions,
-                                ROUND(AVG(action_count), 2) AS avg_actions
-                         FROM meeting_mom
-                         WHERE (? = 0 OR bd_uid = ?)
-                           AND mom_date BETWEEN ? AND ?
-                         GROUP BY YEARWEEK(mom_date, 1)
-                         ORDER BY yw DESC
-                         LIMIT 200";
-                $out['mom_quality_by_week'] = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
-            } else {
-                $out['mom_quality_by_week'] = ['note' => 'tables_not_seeded_yet'];
-            }
+            $uid_mom_clause = ($uid > 0) ? 'AND user_id = ?' : '';
+            $sql = "SELECT YEARWEEK(cdate, 1) AS yw,
+                           COUNT(*)           AS total_moms
+                    FROM mom_data
+                    WHERE cdate BETWEEN ? AND ?
+                    $uid_mom_clause
+                    GROUP BY yw
+                    ORDER BY yw DESC
+                    LIMIT 52";
+            $params = array_merge([$w['from'] . ' 00:00:00', $w['to'] . ' 23:59:59'], $uid_bind_single);
+            $out['mom_quality_by_week'] = $this->db->query($sql, $params)->result_array();
         } catch (Exception $e) {
             $out['mom_quality_by_week'] = ['note' => 'db_error', 'detail' => $e->getMessage()];
         }
 
-        // --- 5. plan_compliance_by_uid ---
+        // --- 5. plan_compliance_by_uid: day_ceremony planned vs done by BD ---
         try {
-            if ($this->db->table_exists('v_plan_compliance_by_uid')) {
-                $sql  = "SELECT * FROM v_plan_compliance_by_uid WHERE ref_date BETWEEN ? AND ? LIMIT 200";
-                $out['plan_compliance_by_uid'] = $this->db->query($sql, [$w['from'], $w['to']])->result_array();
-            } elseif ($this->db->table_exists('day_plan')) {
-                $sql  = "SELECT uid,
-                                COUNT(*) AS planned_days,
-                                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_days,
-                                ROUND(100 * SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) / COUNT(*), 2) AS compliance_pct
-                         FROM day_plan
-                         WHERE (? = 0 OR uid = ?)
-                           AND plan_date BETWEEN ? AND ?
-                         GROUP BY uid
-                         ORDER BY compliance_pct DESC
-                         LIMIT 200";
-                $out['plan_compliance_by_uid'] = $this->db->query($sql, [$uid, $uid, $w['from'], $w['to']])->result_array();
-            } else {
-                $out['plan_compliance_by_uid'] = ['note' => 'tables_not_seeded_yet'];
-            }
+            $uid_dc_clause = ($uid > 0) ? 'AND uid = ?' : '';
+            $sql = "SELECT uid,
+                           COUNT(*)              AS planned_days,
+                           SUM(tasks_done > 0)   AS active_days,
+                           SUM(tasks_planned)    AS total_planned,
+                           SUM(tasks_done)       AS total_done,
+                           ROUND(100.0 * SUM(tasks_done) / NULLIF(SUM(tasks_planned), 0), 2) AS compliance_pct
+                    FROM day_ceremony
+                    WHERE ceremony_date BETWEEN ? AND ?
+                    $uid_dc_clause
+                    GROUP BY uid
+                    ORDER BY compliance_pct DESC
+                    LIMIT 50";
+            $params = array_merge([$w['from'], $w['to']], $uid_bind_single);
+            $out['plan_compliance_by_uid'] = $this->db->query($sql, $params)->result_array();
         } catch (Exception $e) {
             $out['plan_compliance_by_uid'] = ['note' => 'db_error', 'detail' => $e->getMessage()];
         }
@@ -728,8 +955,31 @@ class Gap_reports_api extends CI_Controller {
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
             $params = [$uid, $uid, $cluster_id, $cluster_id, $w['from'], $w['to']];
@@ -778,26 +1028,75 @@ class Gap_reports_api extends CI_Controller {
             }
 
             if (!$table) {
-                $this->_json(['ok' => true, 'rows' => [], 'note' => 'tables_not_seeded_yet']);
+                // === CLOSEOUT_I GAP-3: tblcallevents.special_remarks fallback ===
+                try {
+                    $fb_params = [$cid_id, $cid_id, $w['from'], $w['to']];
+                    $fb_sql = "SELECT tc.id, tc.cid_id, tc.user_id AS source_pk,"
+                            . " tc.special_remarks AS remark_text,"
+                            . " 0 AS flagged, tc.date AS created_at,"
+                            . " COALESCE(cm.compname, '') AS company_name,"
+                            . " COALESCE(u.name, '') AS bd_name"
+                            . " FROM tblcallevents tc"
+                            . " LEFT JOIN init_call ic ON ic.id = tc.cid_id"
+                            . " LEFT JOIN company_master cm ON cm.id = ic.cmpid_id"
+                            . " LEFT JOIN user u ON u.uid = tc.user_id"
+                            . " WHERE tc.special_remarks IS NOT NULL AND tc.special_remarks != ''"
+                            . " AND (? = 0 OR tc.cid_id = ?)"
+                            . " AND DATE(tc.date) BETWEEN ? AND ?"
+                            . " ORDER BY tc.date DESC LIMIT 200";
+                    $fb_rows = $this->db->query($fb_sql, $fb_params)->result_array();
+                    $this->_json(["'ok'" => true, 'count' => count($fb_rows),
+                        'cid_id' => $cid_id, 'from' => $w['from'], 'to' => $w['to'],
+                        'table' => 'tblcallevents.special_remarks', 'rows' => $fb_rows]);
+                } catch (Exception $fe) {
+                    $this->_json(['ok' => false, 'error' => 'fallback_error', 'detail' => $fe->getMessage()], 500);
+                }
                 return;
+                // === END CLOSEOUT_I GAP-3 ===
             }
 
-            $params = [$from_uid, $from_uid, $to_uid, $to_uid, $cid_id, $cid_id, $w['from'], $w['to']];
-            $status_clause = '';
-            if ($status !== '') {
-                $status_clause = ' AND status = ?';
-                $params[] = $status;
+            // handover_v2 schema: closing_bd_uid (no from_uid), cm_uid (acts as to_uid), submitted_at (no handover_date), bd_remarks (no notes)
+            if ($table === 'handover_v2') {
+                $params = [$from_uid, $from_uid, $to_uid, $to_uid, $cid_id, $cid_id, $w['from'], $w['to']];
+                $status_clause = '';
+                if ($status !== '') {
+                    $status_clause = ' AND status = ?';
+                    $params[] = $status;
+                }
+                $sql = "SELECT id,
+                               closing_bd_uid AS from_uid,
+                               cm_uid         AS to_uid,
+                               cid_id,
+                               status,
+                               submitted_at   AS handover_date,
+                               bd_remarks     AS notes,
+                               project_code,
+                               compname
+                        FROM {$table}
+                        WHERE (? = 0 OR closing_bd_uid = ?)
+                          AND (? = 0 OR cm_uid         = ?)
+                          AND (? = 0 OR cid_id         = ?)
+                          AND DATE(submitted_at) BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY submitted_at DESC
+                        LIMIT 200";
+            } else {
+                $params = [$from_uid, $from_uid, $to_uid, $to_uid, $cid_id, $cid_id, $w['from'], $w['to']];
+                $status_clause = '';
+                if ($status !== '') {
+                    $status_clause = ' AND status = ?';
+                    $params[] = $status;
+                }
+                $sql = "SELECT id, from_uid, to_uid, cid_id, status, handover_date, notes
+                        FROM {$table}
+                        WHERE (? = 0 OR from_uid = ?)
+                          AND (? = 0 OR to_uid   = ?)
+                          AND (? = 0 OR cid_id   = ?)
+                          AND handover_date BETWEEN ? AND ?
+                          {$status_clause}
+                        ORDER BY handover_date DESC
+                        LIMIT 200";
             }
-
-            $sql = "SELECT id, from_uid, to_uid, cid_id, status, handover_date, notes
-                    FROM {$table}
-                    WHERE (? = 0 OR from_uid = ?)
-                      AND (? = 0 OR to_uid   = ?)
-                      AND (? = 0 OR cid_id   = ?)
-                      AND handover_date BETWEEN ? AND ?
-                      {$status_clause}
-                    ORDER BY handover_date DESC
-                    LIMIT 200";
             $rows = $this->db->query($sql, $params)->result_array();
 
             $this->_json([
@@ -836,27 +1135,38 @@ class Gap_reports_api extends CI_Controller {
                 return;
             }
 
+            // rm_upsell_pipeline schema: rm_uid, lead_id (no cid_id), category_code (no lane), upsell_stage (no stage), proposal_budget_rs (no value_rs), last_rm_touch_at (no last_touch_date)
             $params = [$rm_uid, $rm_uid, $w['from'], $w['to']];
 
             $lane_clause  = '';
             $stage_clause = '';
 
             if ($lane !== '') {
-                $lane_clause = ' AND lane = ?';
+                $lane_clause = ' AND category_code = ?';
                 $params[] = strtoupper($lane);
             }
             if ($stage !== '') {
-                $stage_clause = ' AND stage = ?';
+                $stage_clause = ' AND upsell_stage = ?';
                 $params[] = $stage;
             }
 
-            $sql = "SELECT id, rm_uid, cid_id, lane, stage, value_rs, last_touch_date
+            $sql = "SELECT id,
+                           rm_uid,
+                           lead_id            AS cid_id,
+                           category_code      AS lane,
+                           upsell_stage       AS stage,
+                           proposal_budget_rs AS value_rs,
+                           last_rm_touch_at   AS last_touch_date,
+                           school_name,
+                           current_cstatus,
+                           days_since_rm_touch,
+                           next_action_due
                     FROM rm_upsell_pipeline
                     WHERE (? = 0 OR rm_uid = ?)
-                      AND last_touch_date BETWEEN ? AND ?
+                      AND DATE(last_rm_touch_at) BETWEEN ? AND ?
                       {$lane_clause}
                       {$stage_clause}
-                    ORDER BY last_touch_date DESC
+                    ORDER BY last_rm_touch_at DESC
                     LIMIT 200";
             $rows = $this->db->query($sql, $params)->result_array();
 
@@ -887,4 +1197,171 @@ class Gap_reports_api extends CI_Controller {
         }
     }
 
-} // end class Gap_reports_api
+    // ================================================================
+    // CLOSEOUT-J ENDPOINT 1 -- BD Request History
+    // GET /api/report/bd_requests?uid=<uid>&status=&from=&to=
+    //
+    // Mirrors prod Reports::UserRequestDetails (Reports.php:575).
+    // Reads bd_request table (26 cols). BD col = requestor_uid.
+    // Added: 2026-06-06 closeout sprint. READ-ONLY (SELECT only).
+    // ================================================================
+    public function bd_requests() {
+        $this->_auth();
+        $uid    = (int)($this->input->get('uid')    ?: 0);
+        $status = $this->input->get('status') ?: '';
+        $w      = $this->_date_window();
+
+        try {
+            if (!$this->db->table_exists('bd_request')) {
+                $this->_json(['ok' => true, 'rows' => [], 'note' => 'table_bd_request_not_found']);
+                return;
+            }
+
+            $params        = [$uid, $uid, $w['from'], $w['to']];
+            $status_clause = '';
+            if ($status !== '') {
+                $status_clause = ' AND r.status = ?';
+                $params[]      = $status;
+            }
+
+            // bd_request cols verified: id, requestor_uid, requestor_type, target_bd_uid,
+            // school_name, school_pincode, school_state, school_city,
+            // school_designation, ctype, fbudget_hint, area_name,
+            // reason, supporting_notes, duplicate_hint_cid,
+            // status, assigned_cm_uid, decided_by_uid, decided_at,
+            // decision_remarks, escalated_to_rm_uid, escalated_at,
+            // init_call_id, sla_minutes, created_at, updated_at
+            $sql = "SELECT r.id,
+                           r.requestor_uid,
+                           r.requestor_type,
+                           r.target_bd_uid,
+                           r.school_name,
+                           r.school_pincode,
+                           r.school_state,
+                           r.school_city,
+                           r.ctype,
+                           r.fbudget_hint,
+                           r.area_name,
+                           r.reason,
+                           r.status,
+                           r.assigned_cm_uid,
+                           r.decided_by_uid,
+                           r.decided_at,
+                           r.decision_remarks,
+                           r.escalated_to_rm_uid,
+                           r.escalated_at,
+                           r.init_call_id,
+                           r.sla_minutes,
+                           r.created_at,
+                           r.updated_at
+                    FROM bd_request r
+                    WHERE (? = 0 OR r.requestor_uid = ?)
+                      AND DATE(r.created_at) BETWEEN ? AND ?
+                      {$status_clause}
+                    ORDER BY r.created_at DESC
+                    LIMIT 200";
+            $rows = $this->db->query($sql, $params)->result_array();
+
+            $this->_json([
+                'ok'     => true,
+                'count'  => count($rows),
+                'uid'    => $uid,
+                'status' => $status ?: 'all',
+                'from'   => $w['from'],
+                'to'     => $w['to'],
+                'table'  => 'bd_request',
+                'rows'   => $rows,
+            ]);
+        } catch (Exception $e) {
+            $this->_json(['ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()], 500);
+        }
+    }
+
+    // ================================================================
+    // CLOSEOUT-J ENDPOINT 2 -- Planner Approved Report
+    // GET /api/report/planner_approved?uid=<uid>&sdate=&edate=&status=
+    //
+    // Mirrors prod PlannerAReport (Menu.php:9881).
+    // Reads planner_approved table (9 cols, 8,448 rows). BD col = user_id.
+    // approved_status: NULL=pending, 1=approved, 2=rejected.
+    // Added: 2026-06-06 closeout sprint. READ-ONLY (SELECT only).
+    // ================================================================
+    public function planner_approved_report() {
+        $this->_auth();
+        $uid    = (int)($this->input->get('uid')   ?: 0);
+        $sdate  = $this->input->get('sdate') ?: ($this->input->get('from') ?: date('Y-m-01'));
+        $edate  = $this->input->get('edate') ?: ($this->input->get('to')   ?: date('Y-m-d'));
+        $status = $this->input->get('status') ?: '';
+
+        try {
+            if (!$this->db->table_exists('planner_approved')) {
+                $this->_json(['ok' => true, 'rows' => [], 'note' => 'table_planner_approved_not_found']);
+                return;
+            }
+
+            // planner_approved cols verified: id, user_id, request_date, request_type,
+            // request_message, approved_status (NULL=pending, 1=approved, 2=rejected),
+            // approved_by, approved_date, created_at
+            $params        = [$uid, $uid, $sdate, $edate];
+            $status_clause = '';
+            if ($status !== '') {
+                $s = strtolower($status);
+                if ($s === 'pending') {
+                    $status_clause = ' AND pa.approved_status IS NULL';
+                } elseif ($s === 'approved' || $s === '1') {
+                    $status_clause = ' AND pa.approved_status = 1';
+                } elseif ($s === 'rejected' || $s === '2') {
+                    $status_clause = ' AND pa.approved_status = 2';
+                } else {
+                    $status_clause = ' AND pa.approved_status = ?';
+                    $params[]      = (int)$status;
+                }
+            }
+
+            $sql = "SELECT pa.id,
+                           pa.user_id,
+                           u.name          AS bd_name,
+                           pa.request_date,
+                           pa.request_type,
+                           pa.request_message,
+                           CASE pa.approved_status
+                               WHEN 1 THEN 'approved'
+                               WHEN 2 THEN 'rejected'
+                               ELSE        'pending'
+                           END             AS approval_label,
+                           pa.approved_status,
+                           pa.approved_by,
+                           pa.approved_date,
+                           pa.created_at
+                    FROM planner_approved pa
+                    LEFT JOIN user u ON u.uid = pa.user_id
+                    WHERE (? = 0 OR pa.user_id = ?)
+                      AND pa.request_date BETWEEN ? AND ?
+                      {$status_clause}
+                    ORDER BY pa.request_date DESC
+                    LIMIT 200";
+            $rows = $this->db->query($sql, $params)->result_array();
+
+            $summary = ['approved' => 0, 'rejected' => 0, 'pending' => 0];
+            foreach ($rows as $r) {
+                $label = $r['approval_label'] ?? 'pending';
+                if (isset($summary[$label])) { $summary[$label]++; }
+            }
+
+            $this->_json([
+                'ok'      => true,
+                'count'   => count($rows),
+                'uid'     => $uid,
+                'sdate'   => $sdate,
+                'edate'   => $edate,
+                'status'  => $status ?: 'all',
+                'summary' => $summary,
+                'table'   => 'planner_approved',
+                'rows'    => $rows,
+            ]);
+        } catch (Exception $e) {
+            $this->_json(['ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()], 500);
+        }
+    }
+
+} // end class Gap_reports_api (closeout-J appended 2026-06-06)

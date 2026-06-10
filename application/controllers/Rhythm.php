@@ -62,6 +62,8 @@ class Rhythm extends CI_Controller
      */
     protected function _auth_bearer()
     {
+        if (function_exists('authunify_ok') && authunify_ok()) { return; } // rimlyproof_authunify_20260609
+
         $hdr = $this->input->get_request_header('Authorization');
         if (!$hdr || strpos($hdr, 'Bearer ') !== 0) {
             $this->_json(['error' => 'unauthorized', 'detail' => 'missing_bearer_header'], 401);
