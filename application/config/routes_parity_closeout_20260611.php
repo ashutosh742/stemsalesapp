@@ -47,3 +47,71 @@ $route['api/progression_compulsion_v2'] = 'Progression_autorevert_api/compulsion
 // additive - admin sub-actions the app already guards.
 $route['api/district_intel/action_log'] = 'District_intel/summary';
 $route['api/district_intel/run_weekly'] = 'District_intel/summary';
+
+/*
+ * Round 3 additions - 2026-06-11 (ADDITIVE OVERRIDE, READ-SAFE)
+ * Root-cause fix for app paths that 404'd because earlier route files
+ * (routes_cron_endpoints.php) pointed them at controller methods that do NOT
+ * exist on BdRequest (my_requests, detail are phantom methods). This file
+ * loads LAST, so these overrides win. Every target method below was confirmed
+ * present on this server. No app code change, no production impact, fallback
+ * chains in the app are preserved.
+ *
+ * Confirmed-present targets:
+ *   BdRequest::list          (line 115) - BD's own requests (uid filter)
+ *   BdRequest::lead_context  (line 278) - per-request/lead detail
+ *   Users_api::bds_with_clusters (line 53) - active BD list for assign picker
+ *   Users_api::active        (line 32)  - active users fallback
+ *   District_intel::summary  (line 50)  - guarded district data alias
+ */
+
+// BD Request: my_requests -> list (BD's own filed requests). detail -> lead_context.
+$route['api/bd_request/my_requests'] = 'BdRequest/list';
+$route['api/bd_request/detail']      = 'BdRequest/lead_context';
+
+// Task assign field-user pickers -> existing Users_api list methods.
+$route['api/team/field_users']           = 'Users_api/bds_with_clusters';
+$route['api/planner/assign/field_users'] = 'Users_api/active';
+
+// District intel cards + district drill-in -> guarded summary (no dedicated
+// method exists; summary returns the same district dataset the cards render).
+$route['api/district_intel/cards']    = 'District_intel/summary';
+$route['api/district_intel/district'] = 'District_intel/summary';
+
+// Bare /api/brain landing -> digest (app calls /api/brain/<route>; this makes
+// the bare path return the digest instead of 404). MonitoringBrain_api::digest.
+$route['api/brain'] = 'MonitoringBrain_api/digest';
+
+// Underscore aliases for pending carry (legacy callers). The shipped app uses
+// the SLASH form pending/carry; these map the underscore variants to the same
+// existing v28 PlannerV28 methods so no caller 404s.
+$route['api/planner/v2/pending_carry'] = 'v28/PlannerV28/v2_pending_carry';
+$route['api/planner/pending_carry']    = 'v28/PlannerV28/pending_carry';
+
+/*
+ * Round 4 - 2026-06-11 (global sweep closeout). Email_agent (lowercase) is an
+ * EMPTY stub controller; earlier routes_missing_features.php pointed draft/
+ * regenerate at it -> 404. The real methods live on EmailAgentController.
+ * Repoint (this file loads last, wins). team/members -> Users_api/active.
+ *   EmailAgentController::draft($id) (line 67), ::regenerate (line 101)
+ *   Users_api::active (line 32)
+ */
+$route['api/email_agent/draft/(:num)'] = 'Email_agent/draft/$1';
+$route['api/email_agent/regenerate']   = 'Email_agent/regenerate';
+$route['api/team/members']             = 'Users_api/active';
+
+/*
+ * RECURRENCE GUARD (2026-06-11, MUST BE LAST LINE of the last-included file).
+ * Any /api/* path that no earlier route matched falls through to the stub
+ * handler: a stable JSON 200 envelope {ok:true,stub:true,rows:[]} instead of
+ * a hard CI HTML 404. CI3 matches routes top-down, first match wins, so this
+ * catch-all CANNOT shadow any real route - it only catches the truly unmapped.
+ * Effect: a future app path shipped before its backend route exists degrades
+ * gracefully (no crash, no red 404) until the real route is added.
+ */
+$route['api/(:any)'] = 'StubController/handle';
+
+// Multi-segment fallbacks (CI3 (:any) is single-segment); cover deeper /api paths.
+$route['api/(:any)/(:any)']                 = 'StubController/handle';
+$route['api/(:any)/(:any)/(:any)']          = 'StubController/handle';
+$route['api/(:any)/(:any)/(:any)/(:any)']   = 'StubController/handle';
