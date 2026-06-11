@@ -496,7 +496,7 @@ class PlannerRequestApi extends CI_Controller {
         try {
             // Fetch the request row.
             $row_query = $this->db->query(
-                "SELECT id, user_id, approver_name, req_date
+                "SELECT id, user_id, approver_name, req_date, pbni_count
                  FROM request_old_pend_task
                  WHERE id = '$request_id'
                  LIMIT 1"
@@ -534,6 +534,34 @@ class PlannerRequestApi extends CI_Controller {
                      ORDER BY id DESC
                      LIMIT 1"
                 );
+
+                // Ensure a today-Approved pbni_alert row exists so Gate 2 releases.
+                // The existing UPDATE above only matches pre-existing Pending rows;
+                // if none existed, pbni_alert_approved stays false. Fix: guarantee
+                // DATE(notified_at)=CURDATE() AND approval_status='Approved' for this user.
+                try {
+                    $ensure_check = $this->db->query(
+                        "SELECT COUNT(*) AS c
+                         FROM pbni_alert
+                         WHERE user_id = '$user_id'
+                           AND DATE(notified_at) = CURDATE()
+                           AND approval_status = 'Approved'"
+                    )->row();
+                    if ($ensure_check && (int)$ensure_check->c === 0) {
+                        $pbni_cnt = isset($req->pbni_count) ? (int)$req->pbni_count : 0;
+                        $this->db->query(
+                            "INSERT INTO pbni_alert
+                             (user_id, pbni_count, lm_uid, notified_at, approval_status, approved_at)
+                             VALUES ('$user_id', '$pbni_cnt', NULL, NOW(), 'Approved', '$approved_at')"
+                        );
+                    }
+                } catch (Exception $ensure_ex) {
+                    log_message('error',
+                        'PlannerRequestApi::yesterday_decision ensure-pbni_alert failed for '
+                        . $user_id . ': ' . $ensure_ex->getMessage()
+                    );
+                    // Non-fatal: the decision itself already succeeded above.
+                }
 
                 $event_type = 'yesterday_request_approved';
             } else {
