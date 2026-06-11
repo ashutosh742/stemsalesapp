@@ -64,6 +64,40 @@ class MobileMisc_api extends CI_Controller {
         return $u;
     }
 
+    // Returns array of BD user_ids managed by this CM (de-duplicated ints).
+    // Primary: user_details.admin_id = cm_uid (kept where populated, no regression).
+    // Additive fallback: if that yields nothing, resolve by org hierarchy using
+    // the CM zone_id (the only reliably-populated CM-to-BD link in this data):
+    // all type_id=3 (BD) users in the same zone_id as the CM. Returns empty
+    // array if the CM has no team, so callers must guard against empty IN().
+    private function _cm_team_bd_ids($cm_uid) {
+        $cm_uid = (int)$cm_uid;
+        if ($cm_uid <= 0) return array();
+        $ids = array();
+        $q = $this->db->query("SELECT user_id FROM user_details WHERE admin_id = ?", array($cm_uid));
+        if ($q) {
+            foreach ($q->result_array() as $r) {
+                $v = (int)$r['user_id'];
+                if ($v > 0) $ids[$v] = true;
+            }
+        }
+        if (empty($ids)) {
+            $zq = $this->db->query("SELECT zone_id FROM user WHERE uid = ? LIMIT 1", array($cm_uid));
+            $zrow = $zq ? $zq->row_array() : null;
+            $zone = $zrow ? (int)$zrow['zone_id'] : 0;
+            if ($zone > 0) {
+                $bq = $this->db->query("SELECT uid FROM user WHERE type_id = 3 AND zone_id = ?", array($zone));
+                if ($bq) {
+                    foreach ($bq->result_array() as $r) {
+                        $v = (int)$r['uid'];
+                        if ($v > 0) $ids[$v] = true;
+                    }
+                }
+            }
+        }
+        return array_keys($ids);
+    }
+
     // ---- /api/agents/list ----
     public function agents_list() {
         if (!$this->_bearer()) return;
@@ -104,9 +138,13 @@ class MobileMisc_api extends CI_Controller {
         if ($cm_uid <= 0) $cm_uid = $this->_uid();
         $rows = array();
         if ($this->db->table_exists('tblcallevents') && $cm_uid > 0) {
-            $date_filter = ($mode === 'today') ? "AND DATE(tce.date) = CURDATE()" : "";
-            $q = $this->db->query("SELECT tce.id, tce.cid_id, tce.user_id AS bd_uid, tce.actiontype_id, tce.purpose_id, tce.remarks, tce.date AS event_at, ud.username AS bd_name FROM tblcallevents tce LEFT JOIN user_details ud ON ud.user_id = tce.user_id WHERE tce.user_id IN (SELECT user_id FROM user_details WHERE admin_id = ?) $date_filter ORDER BY tce.date DESC LIMIT 50", array($cm_uid));
-            $rows = $q ? $q->result_array() : array();
+            $bd_ids = $this->_cm_team_bd_ids($cm_uid);
+            if (!empty($bd_ids)) {
+                $in = implode(',', array_map('intval', $bd_ids));
+                $date_filter = ($mode === 'today') ? "AND DATE(tce.date) = CURDATE()" : "";
+                $q = $this->db->query("SELECT tce.id, tce.cid_id, tce.user_id AS bd_uid, tce.actiontype_id, tce.purpose_id, tce.remarks, tce.date AS event_at, ud.username AS bd_name FROM tblcallevents tce LEFT JOIN user_details ud ON ud.user_id = tce.user_id WHERE tce.user_id IN ($in) $date_filter ORDER BY tce.date DESC LIMIT 50");
+                $rows = $q ? $q->result_array() : array();
+            }
         }
         $this->_ok($rows, 'api/cm/' . ($mode === 'today' ? 'today_activities' : 'activities_feed'), array('cm_uid'=>$cm_uid));
     }
@@ -337,11 +375,14 @@ class MobileMisc_api extends CI_Controller {
         $cm_uid = (int)$this->input->get('cm_uid');
         if ($cm_uid <= 0) $cm_uid = $this->_uid();
         $rows = array();
-        if ($this->db->table_exists('create_planner_request') && $cm_uid > 0) {
-            $q = $this->db->query("SELECT cpr.id, cpr.request_user_id, cpr.request_type, cpr.request_date, cpr.task_count, cpr.approved, cpr.created_at FROM create_planner_request cpr LEFT JOIN user_details ud ON ud.user_id = cpr.request_user_id WHERE ud.admin_id = ? AND cpr.approved = 0 ORDER BY cpr.id DESC LIMIT 50", array($cm_uid));
+        $bd_ids = $cm_uid > 0 ? $this->_cm_team_bd_ids($cm_uid) : array();
+        if (!empty($bd_ids) && $this->db->table_exists('create_planner_request')) {
+            $in = implode(',', array_map('intval', $bd_ids));
+            $q = $this->db->query("SELECT cpr.id, cpr.request_user_id, cpr.request_type, cpr.request_date, cpr.task_count, cpr.approved, cpr.created_at FROM create_planner_request cpr LEFT JOIN user_details ud ON ud.user_id = cpr.request_user_id WHERE cpr.request_user_id IN ($in) AND cpr.approved = 0 ORDER BY cpr.id DESC LIMIT 50");
             $rows = $q ? $q->result_array() : array();
-        } elseif ($this->db->table_exists('task_plan_for_today') && $cm_uid > 0) {
-            $q = $this->db->query("SELECT tpft.* FROM task_plan_for_today tpft LEFT JOIN user_details ud ON ud.user_id = CAST(tpft.user_id AS UNSIGNED) WHERE ud.admin_id = ? AND tpft.approvel_status IN ('','pending') ORDER BY tpft.created_at DESC LIMIT 50", array($cm_uid));
+        } elseif (!empty($bd_ids) && $this->db->table_exists('task_plan_for_today')) {
+            $in = implode(',', array_map('intval', $bd_ids));
+            $q = $this->db->query("SELECT tpft.* FROM task_plan_for_today tpft WHERE CAST(tpft.user_id AS UNSIGNED) IN ($in) AND tpft.approvel_status IN ('','pending') ORDER BY tpft.created_at DESC LIMIT 50");
             $rows = $q ? $q->result_array() : array();
         }
         $this->_ok($rows, 'api/planner/approval_queue', array('cm_uid'=>$cm_uid));
