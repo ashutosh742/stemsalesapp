@@ -1,5 +1,26 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
+/* =====================================================================
+ * CANONICAL ROUTE FILE - SINGLE SOURCE OF TRUTH (2026-06-11)
+ * ---------------------------------------------------------------------
+ * This is the LAST route fragment CodeIgniter includes, so any $route
+ * key defined here AUTHORITATIVELY WINS over earlier fragments.
+ *
+ * FREEZE-THE-SPRAWL POLICY (additive, no regression):
+ *   1. Do NOT create new routes_*.php fragments. All NEW route mappings
+ *      go HERE so include-order can never silently override them.
+ *   2. When adding a new app path, also add it to
+ *      _ops/app_api_paths.json so the daily 6:30 IST sweep covers it.
+ *   3. The catch-all at the bottom (api/(:any) 1-4 segments ->
+ *      StubController/handle) guarantees any unmapped path degrades to a
+ *      stable JSON 200 stub, never a hard CI HTML 404.
+ *
+ * 68 legacy fragments accumulated May 26 - Jun 11 (about 3/day); last-
+ * include-wins meant fixed routes could be re-broken by later files and
+ * new app screens hit unmapped paths. This file + the daily sweep +
+ * the catch-all guard end that cycle.
+ * ===================================================================== */
+
 /*
  * Parity closeout routes - 2026-06-11 (ADDITIVE, READ-SAFE)
  * Maps mobile-app endpoint paths that previously 404'd to EXISTING controller
