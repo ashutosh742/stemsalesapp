@@ -99,16 +99,138 @@ class PlannerV2Extra extends CI_Controller {
 
         $leads = [];
         try {
-            $leads = $this->_lookup_filter_leads($bd_uid, $optradio);
+            // v2150 (A3): the mobile app sends SHORT optradio tokens
+            // (positive, proposal, same_status_30d, partner_type, by_cluster,
+            // default). Resolve those directly against init_call so each row
+            // carries its real cstatus. Anything else falls back to the legacy
+            // verbose-label dispatch table for full back-compat.
+            $short = $this->_short_filter_leads($bd_uid, $optradio);
+            if ($short !== null) {
+                $leads = $short;
+            } else {
+                $leads = $this->_lookup_filter_leads($bd_uid, $optradio);
+            }
         } catch (Exception $e) {
             log_message('error', 'planner/v2/filter_leads failed: ' . $e->getMessage());
             $leads = [];
         }
+
+        // Normalise EVERY row to {id,cname,cstatus,cstatus_name} while keeping
+        // the raw row too (additive, so existing consumers of inid/compname
+        // still work). Root gains ok:true and a leads:[] array.
+        $norm = [];
+        foreach ((is_array($leads) ? $leads : []) as $row) {
+            $norm[] = $this->_normalise_lead($row);
+        }
+
         $this->json_out([
-            'leads'  => is_array($leads) ? $leads : [],
+            'ok'     => true,
+            'leads'  => $norm,
             'filter' => $optradio,
             'bd_uid' => $bd_uid,
+            'count'  => count($norm),
         ]);
+    }
+
+    /** Human label for an init_call.cstatus id (mirrors the `status` table). */
+    private function _cstatus_name($cstatus)
+    {
+        static $map = null;
+        if ($map === null) {
+            $map = [];
+            try {
+                $rows = $this->db->query("SELECT id, name FROM status")->result();
+                foreach ($rows as $r) { $map[(int) $r->id] = $r->name; }
+            } catch (Exception $e) { $map = []; }
+        }
+        $cs = (int) $cstatus;
+        return isset($map[$cs]) ? $map[$cs] : '';
+    }
+
+    /**
+     * Normalise a raw filter row (which may use inid/compname or id/cname or be
+     * an object) into the app contract {id,cname,cstatus,cstatus_name}. Extra
+     * source keys are preserved so nothing already reading them breaks.
+     */
+    private function _normalise_lead($row)
+    {
+        $r = is_object($row) ? get_object_vars($row) : (array) $row;
+
+        $id = 0;
+        foreach (['id', 'inid', 'lead_id', 'cid_id'] as $k) {
+            if (isset($r[$k]) && $r[$k] !== '') { $id = (int) $r[$k]; break; }
+        }
+
+        $cname = '';
+        foreach (['cname', 'compname', 'company', 'company_name', 'name'] as $k) {
+            if (isset($r[$k]) && $r[$k] !== '') { $cname = (string) $r[$k]; break; }
+        }
+
+        $cstatus = null;
+        foreach (['cstatus', 'status', 'cstatusid'] as $k) {
+            if (isset($r[$k]) && $r[$k] !== '') { $cstatus = (int) $r[$k]; break; }
+        }
+        // If the source row had no cstatus, resolve it once from init_call.
+        if ($cstatus === null && $id > 0) {
+            try {
+                $cr = $this->db->query("SELECT cstatus FROM init_call WHERE id = ? LIMIT 1", [$id])->row();
+                $cstatus = $cr ? (int) $cr->cstatus : 0;
+            } catch (Exception $e) { $cstatus = 0; }
+        }
+        if ($cstatus === null) { $cstatus = 0; }
+
+        $out = $r;
+        $out['id']           = $id;
+        $out['cname']        = $cname;
+        $out['cstatus']      = $cstatus;
+        $out['cstatus_name'] = $this->_cstatus_name($cstatus);
+        return $out;
+    }
+
+    /**
+     * Resolve the SHORT optradio tokens the mobile app sends. Returns an array
+     * of rows (each with id, cname, cstatus) on a known token, or null when the
+     * token is not a short token (caller then uses the legacy dispatch table).
+     */
+    private function _short_filter_leads($bd_uid, $optradio)
+    {
+        $bd_uid = (int) $bd_uid;
+        $base = "SELECT ic.id AS id, cm.compname AS cname, ic.cstatus AS cstatus
+                 FROM init_call ic
+                 LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
+                 WHERE (ic.mainbd = {$bd_uid} OR ic.creator_id = {$bd_uid})";
+
+        switch ($optradio) {
+            case 'positive':
+                // Positive funnel: Positive(6) and Very Positive(9), plus the
+                // NAP terminals (12,13). cstatus 5 in the work order maps to the
+                // positive bucket head; include it for completeness.
+                $sql = $base . " AND ic.cstatus IN (5,6,9,12,13) ORDER BY ic.id DESC LIMIT 500";
+                break;
+            case 'proposal':
+                // Closure/proposal stage and beyond (cstatus >= 7).
+                $sql = $base . " AND ic.cstatus >= 7 ORDER BY ic.id DESC LIMIT 500";
+                break;
+            case 'same_status_30d':
+                $sql = $base . " AND ic.updated_at IS NOT NULL
+                                 AND ic.updated_at <= (NOW() - INTERVAL 30 DAY)
+                                 ORDER BY ic.id DESC LIMIT 500";
+                break;
+            case 'partner_type':
+                $sql = $base . " AND cm.partnerType_id IS NOT NULL AND cm.partnerType_id > 0
+                                 ORDER BY cm.partnerType_id ASC, ic.id DESC LIMIT 500";
+                break;
+            case 'by_cluster':
+                $sql = $base . " ORDER BY ic.cluster_id ASC, ic.id DESC LIMIT 500";
+                break;
+            case 'default':
+                $sql = $base . " AND ic.cstatus != '' ORDER BY ic.id DESC LIMIT 500";
+                break;
+            default:
+                return null; // not a short token
+        }
+
+        return $this->db->query($sql)->result();
     }
 
     /**
@@ -431,6 +553,39 @@ class PlannerV2Extra extends CI_Controller {
             'actiontype_id' => $actiontype_id,
             'lead_id'       => $lead_id,
             'note'          => 'cell acknowledged; plan persisted on submit via planner/v2/submit',
+        ]);
+    }
+
+    /**
+     * GET /api/planner/v2/config
+     * ADDITIVE fullfix 2026-06-10: server-driven planner constants so the mobile
+     * app stops hardcoding FLOOR_MIN/CEILING_MIN/MEETING_DAILY_CAP. Mirrors the
+     * values used in Menu.php addplantask12 ($totalAssignTime=540, lunch/auto/TOP
+     * deductions, Rs 500 cash_allot floor block, meeting cap). Read-only, never 500.
+     */
+    public function config()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $nine_hours_planning = 540; // $totalAssignTime in Menu.php addplantask12
+        $lunch_min           = 30;
+        $auto_min            = 90;
+        $topp                = 60;  // TOP deduction
+        $floor_min           = 240; // 4h floor by 18:30 IST or Rs 500 block
+        $budget_min          = $nine_hours_planning - $lunch_min - $auto_min - $topp; // 360
+
+        $this->json_out([
+            'ok'                  => true,
+            'nine_hours_planning' => $nine_hours_planning,
+            'ceiling_min'         => $nine_hours_planning,
+            'floor_min'           => $floor_min,
+            'lunch_min'           => $lunch_min,
+            'auto_min'            => $auto_min,
+            'topp'                => $topp,
+            'budget_min'          => $budget_min,
+            'meeting_daily_cap'   => 4,
+            'cash_allot_block'    => 500,
+            'floor_deadline'      => '18:30',
         ]);
     }
 }

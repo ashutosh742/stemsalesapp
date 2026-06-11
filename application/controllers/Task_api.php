@@ -187,6 +187,8 @@ class Task_api extends CI_Controller {
                     t.appointmentdatetime,
                     t.event_date,
                     t.startm,
+                    cm.lat AS lat,
+                    cm.lng AS lng,
                     COALESCE(cm.compname, p.name) AS title
                 FROM tblcallevents t
                 LEFT JOIN init_call ic ON ic.id = t.cid_id
@@ -236,6 +238,10 @@ class Task_api extends CI_Controller {
                     'appointmenttime'=> $time_str,
                     'cstatus'        => ($st === 'done') ? 2 : 8,
                     'purpose_label'  => $this->_action_label($aid),
+                    // v2150 (B2): route-optimizer coordinates from the joined
+                    // company_master row (null when the company has no anchor).
+                    'lat'            => isset($r['lat']) && $r['lat'] !== null ? (float)$r['lat'] : null,
+                    'lng'            => isset($r['lng']) && $r['lng'] !== null ? (float)$r['lng'] : null,
                 );
                 $tasks[] = $task;
                 $cat = $this->_action_category($aid);
@@ -299,6 +305,8 @@ class Task_api extends CI_Controller {
                     t.appointmentdatetime,
                     t.event_date,
                     t.startm,
+                    cm.lat AS lat,
+                    cm.lng AS lng,
                     COALESCE(cm.compname, p.name) AS title
                 FROM tblcallevents t
                 LEFT JOIN init_call ic ON ic.id = t.cid_id
@@ -344,6 +352,10 @@ class Task_api extends CI_Controller {
                     'appointmenttime'=> $time_str,
                     'cstatus'        => ($st === 'done') ? 2 : 8,
                     'purpose_label'  => $this->_action_label($aid),
+                    // v2150 (B2): route-optimizer coordinates from the joined
+                    // company_master row (null when the company has no anchor).
+                    'lat'            => isset($r['lat']) && $r['lat'] !== null ? (float)$r['lat'] : null,
+                    'lng'            => isset($r['lng']) && $r['lng'] !== null ? (float)$r['lng'] : null,
                 );
                 $tasks[] = $task;
                 $cat = $this->_action_category($aid);

@@ -122,6 +122,25 @@ $route['api/email_agent/regenerate']   = 'Email_agent/regenerate';
 $route['api/team/members']             = 'Users_api/active';
 
 /*
+ * v2150 backend closeout - 2026-06-11 (ADDITIVE, READ-SAFE, REAL CONTROLLERS)
+ * These map the v2.15.0 mobile endpoints to the new Reports_v2150 controller,
+ * which returns real data or a well-formed empty shape (ok:true, empty arrays),
+ * never a stub and never a 4xx/5xx for an empty result. Defined HERE (the last
+ * include) so they win over the catch-all below. No production impact.
+ *
+ *   Reports_v2150::dashboard_bd      -> GET /api/dashboard/bd
+ *   Reports_v2150::proposal_list     -> GET /api/proposal/list
+ *   Reports_v2150::quarter_strategy  -> GET /api/target/quarter_strategy
+ *
+ * Note: /api/dashboard/bd/(:num) is already routed to DashboardBdController
+ * elsewhere; this adds only the bare (uid-as-query-param) form the v2150 app
+ * uses, so the existing path-param route is untouched.
+ */
+$route['api/dashboard/bd']             = 'Reports_v2150/dashboard_bd';
+$route['api/proposal/list']            = 'Reports_v2150/proposal_list';
+$route['api/target/quarter_strategy']  = 'Reports_v2150/quarter_strategy';
+
+/*
  * RECURRENCE GUARD (2026-06-11, MUST BE LAST LINE of the last-included file).
  * Any /api/* path that no earlier route matched falls through to the stub
  * handler: a stable JSON 200 envelope {ok:true,stub:true,rows:[]} instead of

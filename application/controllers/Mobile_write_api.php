@@ -567,12 +567,39 @@ class Mobile_write_api extends CI_Controller {
         $cid_id  = (int)$this->_post('cid_id');
         $pa      = (string)$this->_post('purpose_achieved');
         $now     = date('Y-m-d H:i:s');
+        // v2150 (B1) offline-replay idempotency: optional idempotency_key.
+        $idem    = (string)$this->_post('idempotency_key', '');
+        if ($idem !== '') $idem = substr($idem, 0, 64);
 
-        $task = $this->db->query("SELECT id, actiontype_id, purpose_id, cid_id, assignedto_id, nextCFID, actontaken FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
+        // (a) Replay of a known idempotency_key -> duplicate, no second write.
+        if ($idem !== '') {
+            $seen = $this->db->query(
+                "SELECT id FROM tblcallevents WHERE idempotency_key = ? LIMIT 1",
+                [$idem]
+            )->row_array();
+            if ($seen) {
+                return $this->_ok([
+                    'duplicate'         => true,
+                    'task_id_submitted' => (int)$tid,
+                    'next_task_id'      => (int)$seen['id'],
+                ]);
+            }
+        }
+
+        $task = $this->db->query("SELECT id, actiontype_id, purpose_id, cid_id, assignedto_id, nextCFID, actontaken, user_id FROM tblcallevents WHERE id = ? LIMIT 1", [$tid])->row_array();
         if (!$task) return $this->_deny(400, 'unknown task_id');
         if ((int)$task['cid_id'] !== $cid_id) return $this->_deny(400, 'task does not belong to cid_id');
+        // (c) genuine conflict: task reassigned to another user under us.
+        if ((int)$task['user_id'] !== $uid && (int)$task['assignedto_id'] !== $uid) {
+            return $this->_deny(409, 'task reassigned');
+        }
+        // (b) fallback duplicate: already submitted -> 200 duplicate (was 409).
         if ($task['actontaken'] === 'yes' && (int)$task['nextCFID'] !== 0) {
-            return $this->_deny(409, 'task already submitted');
+            return $this->_ok([
+                'duplicate'         => true,
+                'task_id_submitted' => (int)$tid,
+                'next_task_id'      => (int)$task['nextCFID'],
+            ]);
         }
 
         $lead = $this->db->query("SELECT id, cstatus FROM init_call WHERE id = ? LIMIT 1", [$cid_id])->row_array();
@@ -641,9 +668,26 @@ class Mobile_write_api extends CI_Controller {
             'auto_plan'          => 1,
             'assignedto_by'      => $uid,
         ]);
+        // v2150 (B1): stamp the idempotency_key on the followup row. The UNIQUE
+        // uniq_idem index then makes a replay of the same key collide here.
+        if ($idem !== '') { $nextRow['idempotency_key'] = $idem; }
         $ntid = $this->_next_id('tblcallevents');
         $nextRow['id'] = $ntid;
         $this->db->insert('tblcallevents', $nextRow);
+        $ins_err = $this->db->error();
+        if (!empty($ins_err['code']) && (int)$ins_err['code'] === 1062 && $idem !== '') {
+            // Concurrent/replayed submit already used this key -> duplicate.
+            $this->db->trans_complete();
+            $prev = $this->db->query(
+                "SELECT id FROM tblcallevents WHERE idempotency_key = ? LIMIT 1",
+                [$idem]
+            )->row_array();
+            return $this->_ok([
+                'duplicate'         => true,
+                'task_id_submitted' => (int)$tid,
+                'next_task_id'      => $prev ? (int)$prev['id'] : 0,
+            ]);
+        }
         if (!$ntid) {
             $err = $this->db->error();
             return $this->_deny(500, 'autofollowup insert failed', $err);
