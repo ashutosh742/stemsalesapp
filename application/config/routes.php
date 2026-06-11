@@ -631,3 +631,11 @@ if (file_exists(__DIR__ . '/routes_mobile_named_endpoints_20260610.php')) {
     try { include(__DIR__ . '/routes_mobile_named_endpoints_20260610.php'); }
     catch (Throwable $_ex_mne) { log_message('error', 'routes_mobile_named_endpoints: ' . $_ex_mne->getMessage()); }
 }
+
+
+/* === parity closeout routes 2026-06-11 (additive, maps app paths to existing methods, very last include) === */
+$__rc = __DIR__ . '/routes_parity_closeout_20260611.php';
+if (file_exists($__rc)) {
+    try { include($__rc); }
+    catch (Throwable $_ex_rc) { log_message('error', 'routes_parity_closeout: ' . $_ex_rc->getMessage()); }
+}
