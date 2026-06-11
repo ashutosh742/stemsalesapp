@@ -133,27 +133,45 @@ class DayCeremonyController extends CI_Controller
             $this->_bad('lng is required.');
         }
 
-        // === MIGRATION 087.1 - production discipline gate enforcement ===
+        // === MIGRATION 087.1 - day-start discipline gate ===
+        // parity_functional_fix_20260611: production ALWAYS starts the day - it
+        // does not require a selfie/EXIF/freshness/geofence. The selfie + EXIF +
+        // freshness + anchor-radius checks below are now ADVISORY by default and
+        // only hard-block when the config flag 'day_start_discipline_enforce' in
+        // day_ceremony_config_v2 is set to '1'. Absent row or '0'/empty => OFF
+        // (production parity: day always starts). selfie_url/exif are still
+        // accepted and stored when provided, but never required when enforce is OFF.
+        $this->load->database();
         $selfie_url   = $this->input->post('selfie_url');
         $photo_exif   = $this->input->post('photo_exif_taken_at');
-        if (empty($selfie_url))  { $this->_bad('selfie_url is required (capture a selfie).'); }
-        if (empty($photo_exif))  { $this->_bad('photo_exif_taken_at is required.'); }
-        // Photo freshness - must be within N minutes per day_ceremony_config_v2
-        $this->load->database();
-        $fresh_minutes = (int)$this->db->select('config_value')->from('day_ceremony_config_v2')->where('config_key','day_start_photo_freshness_minutes')->get()->row()->config_value;
-        if (!$fresh_minutes) { $fresh_minutes = 5; }
-        $exif_ts = strtotime($photo_exif); $now_ts = time();
-        if ($exif_ts === false || ($now_ts - $exif_ts) > ($fresh_minutes * 60) || ($exif_ts - $now_ts) > 120) {
-            $this->_bad('Selfie not fresh - must be within '.$fresh_minutes.' minutes.');
-        }
-        // Anchor radius check - haversine vs home/office anchor
-        $anchor = $this->db->select('lat,lng,radius_km')->from('day_start_home_anchor_v2')->where('user_id',$uid)->where('active',1)->get()->row();
-        if ($anchor) {
-            $R = 6371.0; $dLat = deg2rad($lat - $anchor->lat); $dLng = deg2rad($lng - $anchor->lng);
-            $a = sin($dLat/2)*sin($dLat/2) + cos(deg2rad($anchor->lat))*cos(deg2rad($lat))*sin($dLng/2)*sin($dLng/2);
-            $dist_km = 2 * $R * asin(sqrt($a));
-            if ($dist_km > $anchor->radius_km) {
-                $this->_bad('Not within home/office anchor radius ('.round($dist_km,2).' km > '.$anchor->radius_km.' km).');
+
+        // Null-safe read of the enforcement flag (default OFF).
+        $enf_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
+                        ->where('config_key','day_start_discipline_enforce')->get()->row();
+        $enforce = ($enf_row && isset($enf_row->config_value) && (string)$enf_row->config_value === '1');
+
+        if ($enforce) {
+            if (empty($selfie_url))  { $this->_bad('selfie_url is required (capture a selfie).'); }
+            if (empty($photo_exif))  { $this->_bad('photo_exif_taken_at is required.'); }
+            // Photo freshness - must be within N minutes per day_ceremony_config_v2.
+            // Null-safe read of freshness minutes (fallback 5) - fixes latent null-deref.
+            $fresh_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
+                            ->where('config_key','day_start_photo_freshness_minutes')->get()->row();
+            $fresh_minutes = ($fresh_row && isset($fresh_row->config_value)) ? (int)$fresh_row->config_value : 5;
+            if (!$fresh_minutes) { $fresh_minutes = 5; }
+            $exif_ts = strtotime($photo_exif); $now_ts = time();
+            if ($exif_ts === false || ($now_ts - $exif_ts) > ($fresh_minutes * 60) || ($exif_ts - $now_ts) > 120) {
+                $this->_bad('Selfie not fresh - must be within '.$fresh_minutes.' minutes.');
+            }
+            // Anchor radius check - haversine vs home/office anchor.
+            $anchor = $this->db->select('lat,lng,radius_km')->from('day_start_home_anchor_v2')->where('user_id',$uid)->where('active',1)->get()->row();
+            if ($anchor) {
+                $R = 6371.0; $dLat = deg2rad($lat - $anchor->lat); $dLng = deg2rad($lng - $anchor->lng);
+                $a = sin($dLat/2)*sin($dLat/2) + cos(deg2rad($anchor->lat))*cos(deg2rad($lat))*sin($dLng/2)*sin($dLng/2);
+                $dist_km = 2 * $R * asin(sqrt($a));
+                if ($dist_km > $anchor->radius_km) {
+                    $this->_bad('Not within home/office anchor radius ('.round($dist_km,2).' km > '.$anchor->radius_km.' km).');
+                }
             }
         }
         // === END MIGRATION 087.1 enforcement ===
