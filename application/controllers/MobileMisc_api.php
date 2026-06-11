@@ -385,6 +385,62 @@ class MobileMisc_api extends CI_Controller {
             $q = $this->db->query("SELECT tpft.* FROM task_plan_for_today tpft WHERE CAST(tpft.user_id AS UNSIGNED) IN ($in) AND tpft.approvel_status IN ('','pending') ORDER BY tpft.created_at DESC LIMIT 50");
             $rows = $q ? $q->result_array() : array();
         }
+        $rows = $this->_enrich_request_user($rows);
         $this->_ok($rows, 'api/planner/approval_queue', array('cm_uid'=>$cm_uid));
+    }
+
+    // Additive: enrich each row with user_name, user_role, initials by looking
+    // up request_user_id in the user table. ONE batched SELECT (no N+1). Existing
+    // keys are never removed or changed. Unmatched ids fall back to "BD <id>".
+    private function _enrich_request_user($rows) {
+        if (empty($rows) || !is_array($rows)) return $rows;
+        $role_map = array(3=>'BD', 13=>'CM', 4=>'PST', 22=>'RM', 23=>'RM', 24=>'ACM', 27=>'AO');
+        $ids = array();
+        foreach ($rows as $r) {
+            if (isset($r['request_user_id'])) {
+                $v = (int)$r['request_user_id'];
+                if ($v > 0) $ids[$v] = true;
+            }
+        }
+        $info = array();
+        if (!empty($ids) && $this->db->table_exists('user')) {
+            $in = implode(',', array_map('intval', array_keys($ids)));
+            $q = $this->db->query("SELECT uid, name, type_id FROM user WHERE uid IN ($in)");
+            if ($q) {
+                foreach ($q->result_array() as $u) {
+                    $info[(int)$u['uid']] = $u;
+                }
+            }
+        }
+        foreach ($rows as &$r) {
+            if (!isset($r['request_user_id'])) continue;
+            $uid = (int)$r['request_user_id'];
+            if (isset($info[$uid])) {
+                $name = trim((string)$info[$uid]['name']);
+                $tid = (int)$info[$uid]['type_id'];
+                if ($name === '') $name = 'BD ' . $uid;
+                $role = isset($role_map[$tid]) ? $role_map[$tid] : 'BD';
+            } else {
+                $name = 'BD ' . $uid;
+                $role = 'BD';
+            }
+            $r['user_name'] = $name;
+            $r['user_role'] = $role;
+            $r['initials'] = $this->_name_initials($name);
+        }
+        unset($r);
+        return $rows;
+    }
+
+    // First letters of up to two name words, uppercased, ASCII only.
+    private function _name_initials($name) {
+        $parts = preg_split('/\s+/', trim((string)$name));
+        $out = '';
+        foreach ($parts as $p) {
+            if ($p === '') continue;
+            $out .= strtoupper($p[0]);
+            if (strlen($out) >= 2) break;
+        }
+        return $out;
     }
 }
