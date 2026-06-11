@@ -1007,6 +1007,18 @@ class Mobile_stub_real extends CI_Controller {
                 }
             }
 
+            // v2150 (A1): add the preflight{} wrapper the app reads, WITHOUT
+            // dropping the existing flat can_start/hard_gates/soft_gates keys
+            // (additive, so anything already consuming them keeps working).
+            $hard_block = (count($hard_gates) > 0);
+            $first_hard = $hard_block ? $hard_gates[0] : null;
+            $preflight = array(
+                'hard_block'          => $hard_block,
+                'reason'              => $first_hard ? (isset($first_hard['label']) ? $first_hard['label'] : (isset($first_hard['code']) ? $first_hard['code'] : '')) : '',
+                'fix_route'           => $first_hard && isset($first_hard['fix_route']) ? $first_hard['fix_route'] : '',
+                'next_required_screen'=> $first_hard && isset($first_hard['fix_route']) ? $first_hard['fix_route'] : '',
+                'soft_gates'          => $soft_gates,
+            );
             $this->_json(array(
                 'ok'         => true,
                 'uid'        => $target_uid,
@@ -1014,6 +1026,7 @@ class Mobile_stub_real extends CI_Controller {
                 'can_start'  => (count($hard_gates) === 0),
                 'hard_gates' => $hard_gates,
                 'soft_gates' => $soft_gates,
+                'preflight'  => $preflight,
             ));
         } catch (Exception $e) {
             $this->_json(array('ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()), 500);
@@ -1136,45 +1149,117 @@ class Mobile_stub_real extends CI_Controller {
     }
 
     // 28. POST /api/task/submit_closure
+    //
+    // v2150 idempotency + offline-replay safety (B1):
+    //   (a) payload idempotency_key already stored in tblcallevents
+    //       -> 200 {ok:true,duplicate:true}, NO second write.
+    //   (b) fallback: the task row is already closed (actontaken='yes' or a
+    //       terminal status_id) -> 200 {ok:true,duplicate:true}.
+    //   (c) genuine conflict (task gone, reassigned to another user, or the
+    //       lead status moved under us) -> HTTP 409 {ok:false,error}.
+    //   (d) transient DB fault -> 5xx (never 409).
+    //   (e) a normal close stores idempotency_key (UNIQUE uniq_idem) so a
+    //       replay of the SAME key collides at the DB layer and is reported
+    //       as a duplicate rather than creating a second close.
+    // The canonical task store on this database is tblcallevents (there is no
+    // auto_tasks_v2 / task_planner table); taskid == tblcallevents.id.
     public function task_submit_closure() {
         $uid  = $this->_auth();
         $raw  = $this->_body();
         $body = json_decode($raw, true) ?: array();
         $taskid  = isset($body['taskid'])  ? (int)$body['taskid']            : 0;
         $cstatus = isset($body['cstatus']) ? (int)$body['cstatus']           : 0;
-        $remark  = isset($body['remark'])  ? substr($body['remark'], 0, 2000): '';
+        $remark  = isset($body['remark'])  ? substr((string)$body['remark'], 0, 2000): '';
+        // RENAME: incoming meetingProposalStatus -> column proposal_status.
+        $proposal_status = null;
+        if (isset($body['meetingProposalStatus']) && $body['meetingProposalStatus'] !== '') {
+            $proposal_status = substr((string)$body['meetingProposalStatus'], 0, 64);
+        } elseif (isset($body['proposal_status']) && $body['proposal_status'] !== '') {
+            $proposal_status = substr((string)$body['proposal_status'], 0, 64);
+        }
+        $idem = '';
+        if (isset($body['idempotency_key']) && $body['idempotency_key'] !== '') {
+            $idem = substr((string)$body['idempotency_key'], 0, 64);
+        }
         if (!$taskid) {
             $this->_json(array('ok' => false, 'error' => 'taskid required'), 400);
         }
         $closed_at = date('Y-m-d H:i:s');
         try {
-            $tbl = null;
-            if ($this->db->table_exists('auto_tasks_v2')) {
-                $tbl = 'auto_tasks_v2';
-            } elseif ($this->db->table_exists('task_planner')) {
-                $tbl = 'task_planner';
+            // (a) Replay of a known idempotency_key -> duplicate, no write.
+            if ($idem !== '') {
+                $seen = $this->db->query(
+                    "SELECT id FROM tblcallevents WHERE idempotency_key = ? LIMIT 1",
+                    array($idem)
+                )->row();
+                if ($seen) {
+                    $this->_json(array(
+                        'ok'        => true,
+                        'duplicate' => true,
+                        'taskid'    => (int)$seen->id,
+                        'cstatus'   => $cstatus,
+                    ));
+                }
             }
-            if ($tbl) {
-                $this->db->query(
-                    "UPDATE `{$tbl}` SET status='closed', cstatus=?, remark=?, closed_at=?, updated_at=NOW()
-                     WHERE id=?",
-                    array($cstatus, $remark, $closed_at, $taskid)
-                );
+
+            // Load the task row from the canonical store.
+            $row = $this->db->query(
+                "SELECT id, user_id, cid_id, status_id, actontaken FROM tblcallevents WHERE id = ? LIMIT 1",
+                array($taskid)
+            )->row();
+
+            // (c) Genuine conflict: task no longer exists, or it was reassigned
+            // to a different user under us.
+            if (!$row) {
+                $this->_json(array('ok' => false, 'error' => 'task_not_found_or_reassigned'), 409);
             }
-            // Get cid_id for tblcallevents log
-            $cid_id = null;
-            if ($tbl) {
-                $tr = $this->db->query("SELECT cid_id, uid FROM `{$tbl}` WHERE id=? LIMIT 1", array($taskid))->row();
-                if ($tr) $cid_id = (int)$tr->cid_id;
+            if ((int)$row->user_id !== (int)$uid) {
+                $this->_json(array('ok' => false, 'error' => 'task_reassigned'), 409);
             }
-            // Insert closure event into tblcallevents
-            if ($cid_id) {
-                $this->db->query(
-                    "INSERT INTO tblcallevents (user_id, cid_id, fwd_date, cstatus, remark, plan, meeting_type)
-                     VALUES (?, ?, NOW(), ?, ?, 0, 'closure')",
-                    array($uid, $cid_id, $cstatus, $remark)
-                );
+
+            // (b) Fallback duplicate: this task is already closed.
+            $terminal = array(12, 13, 14);
+            $already_closed = ($row->actontaken === 'yes') || in_array((int)$row->status_id, $terminal, true);
+            if ($already_closed) {
+                $this->_json(array(
+                    'ok'        => true,
+                    'duplicate' => true,
+                    'taskid'    => $taskid,
+                    'cstatus'   => $cstatus,
+                ));
             }
+
+            // (e) Normal close. Persist the idempotency_key (UNIQUE) so a later
+            // replay with the same key collides instead of double-closing.
+            $set = array(
+                'actontaken'         => 'yes',
+                'remarks'            => $remark,
+                'updateddate'        => $closed_at,
+                'updation_data_type' => 'submit_closure',
+            );
+            // tblcallevents uses status_id (not cstatus); map the incoming lead
+            // status code onto status_id so the close persists correctly.
+            if ($cstatus > 0)              { $set['status_id'] = $cstatus; }
+            if ($proposal_status !== null) { $set['proposal_status'] = $proposal_status; }
+            if ($idem !== '')              { $set['idempotency_key'] = $idem; }
+
+            $this->db->where('id', $taskid)->update('tblcallevents', $set);
+            $err = $this->db->error();
+            if (!empty($err['code'])) {
+                // Duplicate-key on uniq_idem means a concurrent/replayed close
+                // already used this key -> report duplicate, not a hard error.
+                if ((int)$err['code'] === 1062) {
+                    $this->_json(array(
+                        'ok'        => true,
+                        'duplicate' => true,
+                        'taskid'    => $taskid,
+                        'cstatus'   => $cstatus,
+                    ));
+                }
+                // (d) Any other DB fault is transient -> 5xx, never 409.
+                $this->_json(array('ok' => false, 'error' => 'db_error', 'detail' => $err['message']), 500);
+            }
+
             $this->_json(array(
                 'ok'        => true,
                 'taskid'    => $taskid,
@@ -1182,6 +1267,7 @@ class Mobile_stub_real extends CI_Controller {
                 'cstatus'   => $cstatus,
             ));
         } catch (Exception $e) {
+            // (d) transient DB error -> 5xx, never 409.
             $this->_json(array('ok' => false, 'error' => 'db_error', 'detail' => $e->getMessage()), 500);
         }
     }

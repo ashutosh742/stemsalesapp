@@ -89,6 +89,12 @@ class DataWireShim extends CI_Controller {
         $limit_int = (int)$limit;
         $where_cs  = $apply_cstatus ? ' AND ic.cstatus = ' . (int)$cstatus_val : '';
 
+        // v2150 (B3) lead-scoring fields are derived with correlated subqueries
+        // that degrade to 0/empty when no source row exists (never a 500):
+        //   days_in_stage     = days since the latest lead_progression_log entry
+        //                       for this lead (falls back to days_in_status).
+        //   days_since_action = days since the latest tblcallevents action.
+        //   contacts          = number of company_contact_master rows.
         $sql = "
             SELECT
                 ic.id,
@@ -101,6 +107,12 @@ class DataWireShim extends CI_Controller {
                 s.name        AS stage,
                 ic.fbudget    AS fbudget,
                 DATEDIFF(CURDATE(), ic.createDate) AS days_in_status,
+                (SELECT DATEDIFF(CURDATE(), MAX(lpl.created_at))
+                   FROM lead_progression_log lpl WHERE lpl.lead_id = ic.id) AS days_in_stage_raw,
+                (SELECT DATEDIFF(CURDATE(), MAX(tce.date))
+                   FROM tblcallevents tce WHERE tce.cid_id = ic.id) AS days_since_action_raw,
+                (SELECT COUNT(*) FROM company_contact_master ccm
+                   WHERE ccm.company_id = ic.cmpid_id) AS contacts_raw,
                 ic.mainbd     AS bd_uid
             FROM init_call ic
             LEFT JOIN company_master cm ON cm.id = ic.cmpid_id
@@ -115,19 +127,40 @@ class DataWireShim extends CI_Controller {
 
         $out = array();
         foreach ($rows as $r) {
+            $cstatus_int = (int)$r['cstatus'];
+            // budget: parse the first numeric run out of the free-text fbudget.
+            $budget = 0;
+            if (isset($r['fbudget']) && $r['fbudget'] !== '') {
+                $digits = preg_replace('/[^0-9]/', '', (string)$r['fbudget']);
+                $budget = ($digits === '') ? 0 : (int)$digits;
+            }
+            // days_in_stage: prefer the progression-log delta, else the
+            // create-date delta (days_in_status), else 0.
+            if ($r['days_in_stage_raw'] !== null) {
+                $days_in_stage = (int)$r['days_in_stage_raw'];
+            } else {
+                $days_in_stage = (int)$r['days_in_status'];
+            }
+            $days_since_action = ($r['days_since_action_raw'] !== null) ? (int)$r['days_since_action_raw'] : 0;
             $out[] = array(
-                'id'             => (int)$r['id'],
-                'lead_id'        => (int)$r['id'],
-                'company'        => $r['company']      ?: 'Unknown',
-                'company_name'   => $r['company_name'] ?: 'Unknown',
-                'city'           => $r['city']         ?: '',
-                'state'          => $r['state']        ?: '',
-                'cstatus'        => (int)$r['cstatus'],
-                'cstatus_label'  => $r['cstatus_label'] ?: '',
-                'stage'          => $r['stage']         ?: '',
-                'fbudget'        => $r['fbudget']       ?: '',
-                'days_in_status' => (int)$r['days_in_status'],
-                'bd_uid'         => (int)$r['bd_uid']
+                'id'                => (int)$r['id'],
+                'lead_id'           => (int)$r['id'],
+                'company'           => $r['company']      ?: 'Unknown',
+                'company_name'      => $r['company_name'] ?: 'Unknown',
+                'city'              => $r['city']         ?: '',
+                'state'             => $r['state']        ?: '',
+                'cstatus'           => $cstatus_int,
+                'cstatus_label'     => $r['cstatus_label'] ?: '',
+                'stage'             => $r['stage']         ?: '',
+                'fbudget'           => $r['fbudget']       ?: '',
+                'days_in_status'    => (int)$r['days_in_status'],
+                'bd_uid'            => (int)$r['bd_uid'],
+                // v2150 (B3) additive lead-scoring fields
+                'days_in_stage'     => $days_in_stage,
+                'days_since_action' => $days_since_action,
+                'budget'            => $budget,
+                'contacts'          => (int)$r['contacts_raw'],
+                'has_proposal'      => ($cstatus_int >= 7),
             );
         }
 

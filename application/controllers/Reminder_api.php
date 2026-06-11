@@ -123,17 +123,45 @@ class Reminder_api extends CI_Controller {
         return (int)$this->_authed_uid;
     }
 
+    /*
+     * v2150 (A4): the mobile app speaks title/rtype/rdate/band/message and reads
+     * a "reminders" array. The storage columns stay reminder_type/reminder_date/
+     * time_band/note (additive, no schema churn). Each row is emitted with BOTH
+     * the app field names and the legacy names so old and new clients both work.
+     */
     private function _row_out($r) {
+        $title = (isset($r['title']) && $r['title'] !== null && $r['title'] !== '')
+            ? $r['title'] : $r['reminder_type'];
+        $message = ($r['note'] === null) ? '' : $r['note'];
         return array(
             'id'            => (int)$r['id'],
             'uid'           => (int)$r['uid'],
+            // app field names (v2150)
+            'title'         => ($title === null) ? '' : $title,
+            'rtype'         => $r['reminder_type'],
+            'rdate'         => $r['reminder_date'],
+            'band'          => $r['time_band'],
+            'message'       => $message,
+            'acknowledged'  => ((int)$r['acknowledged']) ? true : false,
+            // legacy field names (back-compat)
             'reminder_type' => $r['reminder_type'],
             'reminder_date' => $r['reminder_date'],
             'time_band'     => $r['time_band'],
-            'note'          => ($r['note'] === null) ? '' : $r['note'],
-            'acknowledged'  => (int)$r['acknowledged'],
+            'note'          => $message,
             'created_at'    => $r['created_at'],
         );
+    }
+
+    /*
+     * Read a field accepting the new app name first, then the legacy name as a
+     * fallback. e.g. _field('rtype','reminder_type').
+     */
+    private function _field($new_key, $old_key, $default = '') {
+        $v = $this->_post($new_key, null);
+        if ($v !== null && $v !== '') return $v;
+        $v = $this->_post($old_key, null);
+        if ($v !== null && $v !== '') return $v;
+        return $default;
     }
 
     /* ===================== GET /api/reminder/list ===================== */
@@ -144,14 +172,20 @@ class Reminder_api extends CI_Controller {
         if ($uid <= 0) return $this->_fail('uid required');
 
         $rows = $this->db->query(
-            "SELECT id, uid, reminder_type, reminder_date, time_band, note, acknowledged, created_at
+            "SELECT id, uid, reminder_type, reminder_date, time_band, note, acknowledged, created_at, title
              FROM app_reminder WHERE uid = ? ORDER BY id DESC",
             array($uid)
         )->result_array();
 
         $out = array();
         foreach ($rows as $r) $out[] = $this->_row_out($r);
-        return $this->_ok(array('uid' => $uid, 'count' => count($out), 'rows' => $out));
+        // v2150 (A4): app reads "reminders"; keep "rows" for back-compat.
+        return $this->_ok(array(
+            'uid'       => $uid,
+            'count'     => count($out),
+            'reminders' => $out,
+            'rows'      => $out,
+        ));
     }
 
     /* ===================== POST /api/reminder/create ===================== */
@@ -162,32 +196,34 @@ class Reminder_api extends CI_Controller {
         $uid = $this->_effective_uid($this->_post('uid', 0));
         if ($uid <= 0) return $this->_fail('uid required');
 
-        $type = trim((string)$this->_post('reminder_type', ''));
-        $date = trim((string)$this->_post('reminder_date', ''));
-        $band = trim((string)$this->_post('time_band', ''));
-        $note = (string)$this->_post('note', '');
+        // v2150 (A4): accept app field names first (title/rtype/rdate/band/message),
+        // fall back to the legacy names (reminder_type/reminder_date/time_band/note).
+        $title = trim((string)$this->_field('title', 'reminder_type', ''));
+        $type  = trim((string)$this->_field('rtype', 'reminder_type', ''));
+        $date  = trim((string)$this->_field('rdate', 'reminder_date', ''));
+        $band  = trim((string)$this->_field('band',  'time_band', ''));
+        $msg   = (string)$this->_field('message', 'note', '');
 
-        if ($type === '') return $this->_fail('reminder_type required');
-        if (!in_array($type, $this->_valid_types, true)) {
-            return $this->_fail('invalid reminder_type, expected one of: ' . implode(',', $this->_valid_types));
-        }
-        if ($date === '') return $this->_fail('reminder_date required');
+        // rtype defaults to title when only a free-text title was sent.
+        if ($type === '' && $title !== '') $type = $title;
+        if ($title === '' && $type !== '') $title = $type;
+
+        if ($title === '' && $type === '') return $this->_fail('title required');
+        if ($date === '') return $this->_fail('rdate required');
         $d = date_create_from_format('Y-m-d', $date);
         if (!$d || $d->format('Y-m-d') !== $date) {
-            return $this->_fail('invalid reminder_date, expected YYYY-MM-DD');
+            return $this->_fail('invalid rdate, expected YYYY-MM-DD');
         }
-        if ($band === '') return $this->_fail('time_band required');
-        if (!in_array($band, $this->_valid_bands, true)) {
-            return $this->_fail('invalid time_band, expected one of: ' . implode(',', $this->_valid_bands));
-        }
+        if ($band === '') return $this->_fail('band required');
 
         $this->db->insert('app_reminder', array(
             'uid'           => $uid,
-            'reminder_type' => $type,
+            'reminder_type' => ($type === '') ? $title : $type,
             'reminder_date' => $date,
             'time_band'     => $band,
-            'note'          => ($note === '') ? null : $note,
+            'note'          => ($msg === '') ? null : $msg,
             'acknowledged'  => 0,
+            'title'         => ($title === '') ? null : $title,
         ));
         $id = (int)$this->db->insert_id();
         if ($id <= 0) {
@@ -196,7 +232,7 @@ class Reminder_api extends CI_Controller {
         }
 
         $r = $this->db->query(
-            "SELECT id, uid, reminder_type, reminder_date, time_band, note, acknowledged, created_at
+            "SELECT id, uid, reminder_type, reminder_date, time_band, note, acknowledged, created_at, title
              FROM app_reminder WHERE id = ? LIMIT 1",
             array($id)
         )->row_array();
