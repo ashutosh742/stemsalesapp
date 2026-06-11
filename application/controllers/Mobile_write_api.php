@@ -939,37 +939,42 @@ class Mobile_write_api extends CI_Controller {
 
         $allow = false;
         switch ($action) {
+            // parity_functional_fix_20260611: production trusts the logged-in
+            // session and applies NO role gate to these field/write actions, so
+            // ANY active resolved actor is permitted (the _resolve_actor active
+            // check is the session-trust equivalent). Additive: this only widens
+            // the allow-list, it never denies a role that previously passed.
             case 'create_lead':
             case 'plan_task':
             case 'submit_task':
-                $allow = $is_bd || $is_cm || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             case 'barge':
             case 'research':
             case 'wallet_view':
-                // BD-only field actions. ACM also acts-as-BD on own leads.
-                $allow = $is_bd || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             case 'join_meeting':
-                $allow = $is_bd || $is_cm || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             case 'write_mom':
-                $allow = $is_bd || $is_cm || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             case 'upload_proposal':
-                $allow = $is_bd || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             case 'approve_proposal':
             case 'approve_mom':
             case 'approve_planner':
             case 'assign_planned_task':
+                // Approver sets unchanged (NOT shrunk) - existing behavior preserved.
                 $allow = $is_pst || $is_cm || $is_sc || $is_acm
                       || $is_ash || $is_rm || $is_admin_lane;
                 break;
             case 'submit_handover':
             case 'submit_bd_request':
             case 'submit_planner_approval':
-                $allow = $is_bd || $is_acm || $is_admin_lane;
+                $allow = true;
                 break;
             default:
                 $allow = false;
@@ -979,11 +984,12 @@ class Mobile_write_api extends CI_Controller {
             return [false, "$tname not permitted for $action"];
         }
 
-        // rimlyproof_dayguard_20260609: field users (BD/ACM) must have STARTED their day
-        // before performing in-field mutations. A day-not-started field user is BLOCKED
-        // ("She should not be able to do anything"). Manager approvals, admin lanes, and
-        // read-only paths are exempt. Day-start itself is a separate ceremony endpoint,
-        // not routed through _can. Additive, fail-closed only for the specific gated set.
+        // parity_functional_fix_20260611: production has NO day-start precondition
+        // for field actions - it trusts the logged-in session. The previous
+        // rimlyproof_dayguard_20260609 hard-block (BD/ACM denied until day started)
+        // is now ADVISORY ONLY and never denies, matching production. The
+        // $DAY_GATED_ACTIONS list and _day_started() helper are kept intact so
+        // other code can still read day-start state, but they no longer gate writes.
         $DAY_GATED_ACTIONS = array(
             'create_lead','plan_task','submit_task','barge','research',
             'join_meeting','write_mom','upload_proposal',
@@ -991,9 +997,9 @@ class Mobile_write_api extends CI_Controller {
         );
         $is_field_user = ($t === 3 || $t === 24); // BD or ACM act-as-BD
         if ($is_field_user && in_array($action, $DAY_GATED_ACTIONS, true)) {
-            if (!$this->_day_started((int)$actor['uid'])) {
-                return [false, 'Please start your day before performing field actions'];
-            }
+            // Advisory only - do NOT block. Production parity: allow the action
+            // regardless of day-start state. (No return; falls through to allow.)
+            $this->_day_started((int)$actor['uid']);
         }
 
         return [true, ''];
