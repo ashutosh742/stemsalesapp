@@ -1199,7 +1199,16 @@ class Mobile_write_api extends CI_Controller {
 
         $uid = (int)$actor['uid'];
         $ucash = (int)$actor['ucash'];
-        if ($ucash < 500) {
+
+        // v2144 additive: optional meeting_type lets mobile record a free "join"
+        // meeting instead of the chargeable bargain. Missing or 'bargain' keeps
+        // the exact existing behavior (Rs 500 wallet debit). 'join' skips the
+        // debit and the cash_log row entirely.
+        $meeting_type = strtolower(trim((string)$this->_post('meeting_type', 'bargain')));
+        if ($meeting_type !== 'join') $meeting_type = 'bargain';
+        $is_join = ($meeting_type === 'join');
+
+        if (!$is_join && $ucash < 500) {
             return $this->_deny(402, 'insufficient wallet: Rs ' . $ucash . ' available, Rs 500 required for barge');
         }
 
@@ -1284,10 +1293,11 @@ class Mobile_write_api extends CI_Controller {
         $lead['id'] = $cid_id;
         $this->db->insert('init_call', $lead);
 
-        // tblcallevents barge row (actiontype 4, purpose 66, cash_allot 500)
+        // tblcallevents barge row (actiontype 4, purpose 66). For a bargain the
+        // cash_allot is 500; for a join it is 0 (no wallet debit).
         $row = $this->_canonical_event_row([
-            'event'              => 'Barge meeting',
-            'meeting_type'       => 'barge',
+            'event'              => $is_join ? 'Join meeting' : 'Barge meeting',
+            'meeting_type'       => $is_join ? 'join' : 'barge',
             'appointmentdatetime'=> $now,
             'fwd_date'           => $now,
             'actiontype_id'      => 4,
@@ -1296,11 +1306,11 @@ class Mobile_write_api extends CI_Controller {
             'purpose_id'         => 66,
             'remarks'            => (string)$this->_post('remarks', ''),
             'user_id'            => $uid,
-            'updation_data_type' => 'barge',
+            'updation_data_type' => $is_join ? 'join' : 'barge',
             'plan'               => 1,
             'self_assign'        => 'yes',
             'assignedto_by'      => $uid,
-            'cash_allot'         => 500,
+            'cash_allot'         => $is_join ? 0 : 500,
             'live_loaction'      => (string)$this->_post('location', ''),
         ]);
         $tid = $this->_next_id('tblcallevents');
@@ -1328,7 +1338,7 @@ class Mobile_write_api extends CI_Controller {
             'location'        => (string)$this->_post('location', ''),
             'city'            => (string)$this->_post('city', ''),
             'state'           => (string)$this->_post('state', ''),
-            'type'            => 'mobile_barge',
+            'type'            => $is_join ? 'mobile_join' : 'mobile_barge',
             'letmeetingsremarks' => '',
             'company_as'      => 'school',
             'company_descri'  => '',
@@ -1340,22 +1350,29 @@ class Mobile_write_api extends CI_Controller {
         $bm['id'] = $barge_id;
         $this->db->insert('barginmeeting', $bm);
 
-        // wallet debit
-        $new_balance = $ucash - 500;
-        $this->db->where('id', (int)$actor['ud_id'])->update('user_details', ['ucash' => $new_balance]);
+        // wallet debit + cash_log: only for a chargeable bargain. A join is free,
+        // so the wallet is untouched and no cash_log row is written.
+        if ($is_join) {
+            $new_balance = $ucash;
+            $cash_debited = 0;
+        } else {
+            $new_balance = $ucash - 500;
+            $this->db->where('id', (int)$actor['ud_id'])->update('user_details', ['ucash' => $new_balance]);
 
-        // cash_log
-        $cl = [
-            'uid'      => $uid,
-            'cash'     => 500,
-            'av_cash'  => $new_balance,
-            'type'     => 'debit',
-            'remarks'  => 'Cash Deducted for Creating Barg in Meeting',
-            'task_id'  => $tid,
-        ];
-        $cl_id = $this->_next_id('cash_log');
-        $cl['id'] = $cl_id;
-        $this->db->insert('cash_log', $cl);
+            // cash_log
+            $cl = [
+                'uid'      => $uid,
+                'cash'     => 500,
+                'av_cash'  => $new_balance,
+                'type'     => 'debit',
+                'remarks'  => 'Cash Deducted for Creating Barg in Meeting',
+                'task_id'  => $tid,
+            ];
+            $cl_id = $this->_next_id('cash_log');
+            $cl['id'] = $cl_id;
+            $this->db->insert('cash_log', $cl);
+            $cash_debited = 500;
+        }
 
         $this->db->trans_complete();
         if (!$this->db->trans_status()) {
@@ -1368,7 +1385,8 @@ class Mobile_write_api extends CI_Controller {
             'cid_id'       => $cid_id,
             'task_id'      => $tid,
             'barge_id'     => $barge_id,
-            'cash_debited' => 500,
+            'meeting_type' => $meeting_type,
+            'cash_debited' => $cash_debited,
             'new_balance'  => $new_balance,
         ]);
     }

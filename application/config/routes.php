@@ -633,6 +633,14 @@ if (file_exists(__DIR__ . '/routes_mobile_named_endpoints_20260610.php')) {
 }
 
 
+/* === reminder endpoints 2026-06-11 (additive, v2144 mobile parity, very last include so it wins) === */
+$__rrv = __DIR__ . '/routes_reminder_v2144.php';
+if (file_exists($__rrv)) {
+    try { include($__rrv); }
+    catch (Throwable $_ex_rrv) { log_message('error', 'routes_reminder_v2144: ' . $_ex_rrv->getMessage()); }
+}
+
+
 /* === parity closeout routes 2026-06-11 (additive, maps app paths to existing methods, very last include) === */
 $__rc = __DIR__ . '/routes_parity_closeout_20260611.php';
 if (file_exists($__rc)) {
