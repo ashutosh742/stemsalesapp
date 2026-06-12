@@ -278,6 +278,24 @@ class ProductivityV28_model extends CI_Model {
     public function get_stuck_leads_for_date($for_date, $bd_uid = null)
     {
         $for_date = $this->db->escape_str($for_date);
+
+        // Graceful fallback: if the requested date has no snapshot yet (nightly
+        // builder not run for that day), serve the most recent populated
+        // snapshot instead of returning an empty list. This is a tiny indexed
+        // lookup on stuck_leads_daily (idx_for_date_bd); it never scans
+        // init_call live. A slightly stale snapshot is far better than total:0.
+        $have = $this->db->query(
+            "SELECT 1 FROM stuck_leads_daily WHERE for_date = '{$for_date}' LIMIT 1"
+        )->row();
+        if ( ! $have) {
+            $latest = $this->db->query(
+                "SELECT MAX(for_date) AS d FROM stuck_leads_daily"
+            )->row();
+            if ($latest && $latest->d) {
+                $for_date = $this->db->escape_str($latest->d);
+            }
+        }
+
         $sql = "
             SELECT s.*, COALESCE(cm.compname,'') AS company_name,
                    COALESCE(u.name,'') AS bd_name
@@ -338,3 +356,4 @@ class ProductivityV28_model extends CI_Model {
         return $this->db->query($sql)->result_array();
     }
 }
+
