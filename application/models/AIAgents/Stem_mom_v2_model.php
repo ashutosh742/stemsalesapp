@@ -566,9 +566,13 @@ class MomV2_model extends CI_Model {
             'approved_by' => $manager_uid,
             'approved_date' => date('Y-m-d H:i:s')
         ]);
+        // Null-safe cid_id resolution (was a crash: ->row()->cid_id on null row,
+        // and a NOT NULL violation when init_cmpid was null). COALESCE to 0.
+        $_mom_row = $this->db->select('init_cmpid AS cid_id')->where('id', $mom_id)->get('mom_data')->row();
+        $_cid_id = ($_mom_row && $_mom_row->cid_id !== null) ? (int)$_mom_row->cid_id : 0;
         $this->db->insert('mom_line_manager_review', [
             'mom_id' => $mom_id,
-            'cid_id' => $this->db->select('init_cmpid AS cid_id')->where('id', $mom_id)->get('mom_data')->row()->cid_id,
+            'cid_id' => $_cid_id,
             'manager_uid' => $manager_uid,
             'manager_role' => $manager_role,
             'action' => 'approve',
@@ -584,9 +588,12 @@ class MomV2_model extends CI_Model {
             'approved_by' => $manager_uid,
             'approved_date' => date('Y-m-d H:i:s')
         ]);
+        // Null-safe cid_id resolution (was a crash on missing mom_id / null init_cmpid).
+        $_mom_row_r = $this->db->select('init_cmpid AS cid_id')->where('id', $mom_id)->get('mom_data')->row();
+        $_cid_id_r = ($_mom_row_r && $_mom_row_r->cid_id !== null) ? (int)$_mom_row_r->cid_id : 0;
         $this->db->insert('mom_line_manager_review', [
             'mom_id' => $mom_id,
-            'cid_id' => $this->db->select('init_cmpid AS cid_id')->where('id', $mom_id)->get('mom_data')->row()->cid_id,
+            'cid_id' => $_cid_id_r,
             'manager_uid' => $manager_uid,
             'manager_role' => $manager_role,
             'action' => 'reject',
