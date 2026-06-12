@@ -64,7 +64,7 @@ class AgentRunner_api extends CI_Controller {
         $token = $this->_bearer();
         if ($token === $this->MASTER) return true;
         // Allow a valid per-user api_token too.
-        $u = $this->db->where('api_token', $token)->get('user')->row_array();
+        $u = $this->db->query("SELECT uid, role FROM api_token WHERE token = ? AND active = 1 AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1", array($token))->row_array();
         return $u ? true : false;
     }
 
