@@ -150,6 +150,21 @@ class DayCeremonyController extends CI_Controller
                         ->where('config_key','day_start_discipline_enforce')->get()->row();
         $enforce = ($enf_row && isset($enf_row->config_value) && (string)$enf_row->config_value === '1');
 
+        // PER-ROLE STRICT GATE (2026-06-12): parity downgraded the gate globally,
+        // but strict_gate_role_ids in day_ceremony_config_v2 names the roles that
+        // MUST stay gated (BD=3, CM=13, etc.). Enforce for those roles regardless
+        // of the global flag; all other roles keep production-parity behaviour.
+        try {
+            $sg_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
+                            ->where('config_key','strict_gate_role_ids')->get()->row();
+            if ($sg_row && isset($sg_row->config_value) && trim((string)$sg_row->config_value) !== '') {
+                $strict_ids = array_filter(array_map('intval', explode(',', (string)$sg_row->config_value)));
+                $u_row = $this->db->select('type_id')->from('user')->where('uid', (int)$uid)->get()->row();
+                $u_type = ($u_row && isset($u_row->type_id)) ? (int)$u_row->type_id : 0;
+                if ($u_type && in_array($u_type, $strict_ids, true)) { $enforce = true; }
+            }
+        } catch (\Throwable $t) { /* fail-open to global flag; never block on a config read error */ }
+
         if ($enforce) {
             if (empty($selfie_url))  { $this->_bad('selfie_url is required (capture a selfie).'); }
             if (empty($photo_exif))  { $this->_bad('photo_exif_taken_at is required.'); }
