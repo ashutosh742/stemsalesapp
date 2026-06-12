@@ -566,6 +566,18 @@ class Mobile_write_api extends CI_Controller {
         $tid     = (int)$this->_post('task_id');
         $cid_id  = (int)$this->_post('cid_id');
         $pa      = (string)$this->_post('purpose_achieved');
+        // Part C data-quality guard: purpose_achieved must be a real outcome on
+        // activity close, never blank. Enforce forward (no backfill). Normalize
+        // common variants, then reject anything outside the allowed set so the
+        // field can no longer be saved empty. Additive: presence was already
+        // required; this also rejects blank/invalid values.
+        $pa = strtolower(trim($pa));
+        if ($pa === 'partially') $pa = 'partial';
+        if ($pa === 'y') $pa = 'yes';
+        if ($pa === 'n') $pa = 'no';
+        if (!in_array($pa, array('yes', 'no', 'partial'), true)) {
+            return $this->_deny(400, 'purpose_achieved is required to close this activity (allowed: yes, no, partial)');
+        }
         $now     = date('Y-m-d H:i:s');
         // v2150 (B1) offline-replay idempotency: optional idempotency_key.
         $idem    = (string)$this->_post('idempotency_key', '');
@@ -3552,3 +3564,4 @@ class Mobile_write_api extends CI_Controller {
     }
 
 }
+
