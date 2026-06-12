@@ -152,7 +152,7 @@ class Email_to_task extends CI_Controller {
         $tok = $this->_bearer_token();
         if (!$tok) return null;
         // Look up uid from user.api_token or session_token. Production has this mapping.
-        $u = $this->db->select('uid')->where('api_token', $tok)->limit(1)->get('user')->row();
+        $u = $this->db->query("SELECT uid FROM api_token WHERE token = ? AND active = 1 AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1", array($tok))->row();
         return $u ? (int)$u->uid : null;
     }
 
@@ -162,7 +162,7 @@ class Email_to_task extends CI_Controller {
         $expected = getenv('STEM_DIGEST_TOKEN');
         if ($expected && hash_equals($expected, $tok)) return true;
         // Or admin user token
-        $u = $this->db->select('uid, type_id')->where('api_token', $tok)->limit(1)->get('user')->row();
+        $u = $this->db->query("SELECT t.uid, u.type_id FROM api_token t JOIN user u ON u.uid = t.uid WHERE t.token = ? AND t.active = 1 AND (t.expires_at IS NULL OR t.expires_at > NOW()) LIMIT 1", array($tok))->row();
         return $u && in_array((int)$u->type_id, array(1, 2));
     }
 }
