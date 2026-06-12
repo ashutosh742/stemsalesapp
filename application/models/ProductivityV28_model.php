@@ -167,56 +167,46 @@ class ProductivityV28_model extends CI_Model {
     {
         $for_date = $this->db->escape_str($for_date);
 
-        // Use init_call.updated_at as proxy for stage-entry date (last status
-        // movement). days_in_stage = today - updated_at.
-        // stuck_threshold has cstatus + days columns.
-        $sql = "
+        // Set-based, idempotent snapshot builder. Replaces the prior full-scan
+        // HAVING SELECT plus per-row N+1 PHP write loop with two statements.
+        //
+        // days_in_stage = DATEDIFF(for_date, last touch), where last touch is
+        // init_call.updated_at (stage-entry proxy) falling back to createDate.
+        // The DATEDIFF filter MUST stay in WHERE (not rewritten as an INTERVAL
+        // subtraction): updated_at carries a time component, so the INTERVAL
+        // form is off-by-rows. DATEDIFF in WHERE is the result-equivalent form.
+        // bd_uid uses COALESCE(l.mainbd, 0): stuck_leads_daily.bd_uid is NOT
+        // NULL and init_call.mainbd can be NULL. The prior PHP loop cast it via
+        // (int) which mapped NULL to 0, so COALESCE(..,0) preserves that exact
+        // behavior (and the 54000-row result-equivalence).
+
+        // Step A: clear this day's snapshot so re-runs are idempotent.
+        $this->db->query("
+            DELETE FROM stuck_leads_daily
+            WHERE for_date = '{$for_date}'
+        ");
+
+        // Step B: insert the stuck rows in a single set-based pass.
+        $this->db->query("
+            INSERT INTO stuck_leads_daily
+                (for_date, cid_id, bd_uid, cstatus, days_in_stage,
+                 threshold_days, last_touch_date)
             SELECT
-                l.id        AS cid_id,
-                l.mainbd    AS bd_uid,
-                l.cstatus   AS cstatus,
-                DATE(COALESCE(l.updated_at, l.createDate)) AS last_touch_date,
-                DATEDIFF('{$for_date}', COALESCE(l.updated_at, l.createDate)) AS days_in_stage,
-                COALESCE(st.days, 14) AS threshold_days
+                '{$for_date}',
+                l.id,
+                COALESCE(l.mainbd, 0),
+                l.cstatus,
+                DATEDIFF('{$for_date}', COALESCE(l.updated_at, l.createDate)),
+                COALESCE(st.days, 14),
+                DATE(COALESCE(l.updated_at, l.createDate))
             FROM init_call l
             LEFT JOIN stuck_threshold st ON st.cstatus = l.cstatus
             WHERE l.cstatus NOT IN (12, 13)
-            HAVING days_in_stage >= threshold_days
-            ORDER BY days_in_stage DESC
-        ";
+              AND DATEDIFF('{$for_date}', COALESCE(l.updated_at, l.createDate))
+                  >= COALESCE(st.days, 14)
+        ");
 
-        $results = $this->db->query($sql)->result_array();
-        $count = 0;
-
-        foreach ($results as $r) {
-            $insert = [
-                'for_date'        => $for_date,
-                'cid_id'          => (int) $r['cid_id'],
-                'bd_uid'          => (int) $r['bd_uid'],
-                'cstatus'         => (int) $r['cstatus'],
-                'days_in_stage'   => (int) $r['days_in_stage'],
-                'threshold_days'  => (int) $r['threshold_days'],
-                'last_touch_date' => $r['last_touch_date'],
-            ];
-
-            $exists_sql = "
-                SELECT id FROM stuck_leads_daily
-                WHERE cid_id = {$insert['cid_id']}
-                  AND for_date = '{$for_date}'
-                LIMIT 1
-            ";
-            $existing = $this->db->query($exists_sql)->row();
-
-            if ($existing) {
-                $this->db->where('id', $existing->id);
-                $this->db->update('stuck_leads_daily', $insert);
-            } else {
-                $this->db->insert('stuck_leads_daily', $insert);
-            }
-            $count++;
-        }
-
-        return $count;
+        return (int) $this->db->affected_rows();
     }
 
     // -------------------------------------------------------------------------
