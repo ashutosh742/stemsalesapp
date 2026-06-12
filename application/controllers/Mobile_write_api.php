@@ -575,8 +575,28 @@ class Mobile_write_api extends CI_Controller {
         if ($pa === 'partially') $pa = 'partial';
         if ($pa === 'y') $pa = 'yes';
         if ($pa === 'n') $pa = 'no';
+        // PO directive 2026-06-12: task execution must ALWAYS close. Do not
+        // reject an unknown/blank purpose_achieved; normalize to a valid outcome
+        // ('no') and PROCEED so no activity is ever left stuck open. The original
+        // value is still logged below for data-quality follow-up. Additive.
         if (!in_array($pa, array('yes', 'no', 'partial'), true)) {
-            return $this->_deny(400, 'purpose_achieved is required to close this activity (allowed: yes, no, partial)');
+            $_pa_orig_dq = $pa;
+            $pa = 'no';
+            try {
+                $this->db->insert('remark_guard_block_log', array(
+                    'user_id'         => $uid,
+                    'cid_id'          => (int)$this->_post('cid_id'),
+                    'tblcallevent_id' => (int)$this->_post('task_id'),
+                    'action_id'       => '',
+                    'actontaken'      => (string)$this->_post('actontaken', ''),
+                    'purpose'         => substr($_pa_orig_dq, 0, 10),
+                    'remark_field'    => 'purpose_achieved',
+                    'block_reason'    => ($_pa_orig_dq === '' ? 'pa_blank_defaulted_no' : 'pa_invalid_defaulted_no'),
+                    'endpoint'        => 'mobile_submit_task',
+                    'user_agent'      => substr((string)$this->input->user_agent(), 0, 255),
+                    'ip_addr'         => $this->input->ip_address(),
+                ));
+            } catch (Exception $e) { log_message('error', 'Mobile_write_api.php pa_dq_log: ' . $e->getMessage()); }
         }
         $now     = date('Y-m-d H:i:s');
         // v2150 (B1) offline-replay idempotency: optional idempotency_key.
@@ -647,11 +667,10 @@ class Mobile_write_api extends CI_Controller {
                         'ip_addr'         => $this->input->ip_address(),
                     ));
                 } catch (Exception $e) { log_message('error', 'Mobile_write_api.php silent_catch: ' . $e->getMessage()); }
-                return $this->_deny(422, 'remark_required', array(
-                    'message' => 'Remark required (minimum ' . $_min_len_074 . ' characters describing what happened).',
-                    'field'   => 'remarks',
-                    'min_len' => $_min_len_074,
-                ));
+                // PO directive 2026-06-12: do NOT block task closure on a short or
+                // missing remark. The block is logged above for data-quality
+                // follow-up, but the close PROCEEDS so no task is ever stuck.
+                // (Was: return 422 remark_required.) Additive / no regression.
             }
         }
         // END Migration 074 guard
@@ -3501,7 +3520,7 @@ class Mobile_write_api extends CI_Controller {
         // 5) Yesterday/today planner not already pending approval
         $planner_pending = false;
         try {
-            $r = $this->db->query("SELECT COUNT(*) c FROM planner_approved WHERE bd_uid = ? AND status = 0", array($uid))->row_array();
+            $r = $this->db->query("SELECT COUNT(*) c FROM planner_approved WHERE user_id = ? AND (approved_status = 0 OR approved_status IS NULL)", array($uid))->row_array();
             $planner_pending = $r ? ((int)$r['c'] > 0) : false;
         } catch (Exception $e) { $planner_pending = false; }
         $add('planner_not_pending', 'No pending plan approval', $planner_pending ? 'A submitted plan is awaiting manager approval.' : 'No plan pending approval.',
