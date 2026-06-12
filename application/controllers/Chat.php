@@ -341,7 +341,7 @@ class Chat extends CI_Controller {
     
     public function call_chatgpt_api_with_context($prompt, $previousMessages, $context) {
         // Configuration for OpenAI API
-        $api_key = 'REDACTED_KEY_SEE_SERVER_CONFIG';// Use environment variable or config
+        $this->load->config('openai', TRUE); $api_key = $this->config->item('openai_api_key','openai') ?: (getenv('STEM_OPENAI_KEY') ?: '');// centralized 2026-06-10
         $api_url = 'https://api.openai.com/v1/chat/completions';
         
         // Build messages array
@@ -582,7 +582,7 @@ class Chat extends CI_Controller {
         $token = trim(str_replace(["Bearer ", "Bearer"], "", $header));
         $master = "4eBaiAT7r4zu6OK3b8evjLNia1D7RGgb0qRTuLJfUSo";
         if ($token !== $master) {
-            $user = $this->db->where("api_token", $token)->get("user")->row_array();
+            $user = $this->db->query("SELECT u.* FROM api_token t JOIN user u ON u.uid = t.uid WHERE t.token = ? AND t.active = 1 AND (t.expires_at IS NULL OR t.expires_at > NOW()) LIMIT 1", array($token))->row_array();
             if (!$user) {
                 $this->output->set_status_header(401)->set_content_type("application/json")
                     ->set_output(json_encode(["ok" => false, "error" => "unauthorized"]));
