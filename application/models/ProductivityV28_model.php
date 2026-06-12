@@ -175,6 +175,10 @@ class ProductivityV28_model extends CI_Model {
         // The DATEDIFF filter MUST stay in WHERE (not rewritten as an INTERVAL
         // subtraction): updated_at carries a time component, so the INTERVAL
         // form is off-by-rows. DATEDIFF in WHERE is the result-equivalent form.
+        // bd_uid uses COALESCE(l.mainbd, 0): stuck_leads_daily.bd_uid is NOT
+        // NULL and init_call.mainbd can be NULL. The prior PHP loop cast it via
+        // (int) which mapped NULL to 0, so COALESCE(..,0) preserves that exact
+        // behavior (and the 54000-row result-equivalence).
 
         // Step A: clear this day's snapshot so re-runs are idempotent.
         $this->db->query("
@@ -190,7 +194,7 @@ class ProductivityV28_model extends CI_Model {
             SELECT
                 '{$for_date}',
                 l.id,
-                l.mainbd,
+                COALESCE(l.mainbd, 0),
                 l.cstatus,
                 DATEDIFF('{$for_date}', COALESCE(l.updated_at, l.createDate)),
                 COALESCE(st.days, 14),
