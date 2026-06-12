@@ -228,6 +228,7 @@ class AgentRunner_api extends CI_Controller {
             case 'war_room':     $this->_war_room($p);     break;
             case 'cm_copilot':   $this->_cm_copilot($p);   break;
             case 'cadence_star': $this->_cadence_star($p); break;
+            case 'anaya':        $this->_anaya($p);        break;
             default:
                 $this->_json(['ok' => false, 'error' => 'unknown_agent', 'agent' => (string)$agent], 404);
         }
@@ -239,6 +240,7 @@ class AgentRunner_api extends CI_Controller {
     public function war_room()    { if(!$this->_authed()) $this->_json(['ok'=>false,'error'=>'unauthorized'],401); $this->_war_room($this->_body()); }
     public function cm_copilot()  { if(!$this->_authed()) $this->_json(['ok'=>false,'error'=>'unauthorized'],401); $this->_cm_copilot($this->_body()); }
     public function cadence_star(){ if(!$this->_authed()) $this->_json(['ok'=>false,'error'=>'unauthorized'],401); $this->_cadence_star($this->_body()); }
+    public function anaya()       { if(!$this->_authed()) $this->_json(['ok'=>false,'error'=>'unauthorized'],401); $this->_anaya($this->_body()); }
 
     // ============================================================ AGENT: MOM
     // Template-based meeting-minutes draft from a transcript. No LLM required.
@@ -591,4 +593,61 @@ class AgentRunner_api extends CI_Controller {
             'overdue' => $overdue, 'upcoming' => $upcoming, 'text' => $text,
         ]);
     }
+
+    // ============================================================ AGENT: ANAYA
+    // BD field assistant briefing. Read-only. Mirrors /api/anaya/briefing intent
+    // but self-contained so the unified /api/agent/run path works for 'anaya'.
+    // params: { uid|bd_uid, limit? }
+    private function _anaya($p)
+    {
+        $bd = isset($p['uid']) ? (int)$p['uid'] : (isset($p['bd_uid']) ? (int)$p['bd_uid'] : 0);
+        if ($bd <= 0) $this->_json(['ok' => false, 'error' => 'uid_required'], 422);
+        $limit = isset($p['limit']) ? max(1, min(50, (int)$p['limit'])) : 10;
+
+        // Headline counts for this BD (read-only).
+        $cnt = $this->_q(
+            "SELECT COUNT(*) AS open_leads, "
+          . "SUM(CASE WHEN DATEDIFF(NOW(), COALESCE(c.updated_at, c.created_at)) > 14 THEN 1 ELSE 0 END) AS stale_touches "
+          . "FROM init_call c "
+          . "WHERE c.mainbd = " . $bd . " AND (c.deletebd IS NULL OR c.deletebd = 0) "
+          . "AND c.cstatus NOT IN (5,7,14)"
+        );
+        $open  = (int)(isset($cnt[0]['open_leads']) ? $cnt[0]['open_leads'] : 0);
+        $stale = (int)(isset($cnt[0]['stale_touches']) ? $cnt[0]['stale_touches'] : 0);
+
+        // Top leads to push: positive-ish stages, ranked by idle days.
+        $push = $this->_q(
+            "SELECT c.id AS lead_id, cm.compname AS company, " . $this->_label_case('c.cstatus') . " AS stage, "
+          . "DATEDIFF(NOW(), COALESCE(c.updated_at, c.created_at)) AS days_idle "
+          . "FROM init_call c LEFT JOIN company_master cm ON cm.id = c.cmpid_id "
+          . "WHERE c.mainbd = " . $bd . " AND (c.deletebd IS NULL OR c.deletebd = 0) "
+          . "AND c.cstatus IN (6,9,12,13) "
+          . "ORDER BY days_idle DESC LIMIT " . $limit
+        );
+
+        if ($open == 0) {
+            $this->_json([
+                'ok' => true, 'empty' => true, 'agent' => 'anaya', 'bd_uid' => $bd,
+                'open_leads' => 0, 'stale_touches' => 0, 'leads_to_push' => [],
+                'text' => "No open leads found for you right now.",
+            ]);
+        }
+
+        $text = "You have " . $open . " open leads; " . $stale . " have gone stale (no touch in over 14 days).";
+        if (count($push)) {
+            $text .= " Top lead to push: " . trim((string)$push[0]['company'])
+                  . " (" . trim((string)$push[0]['stage']) . ", idle " . (int)$push[0]['days_idle'] . " days).";
+        }
+        $text = $this->_llm_polish(
+            "Write a concise two-sentence morning briefing for a BD field rep from: " . $text, $text
+        );
+
+        $this->_json([
+            'ok' => true, 'agent' => 'anaya', 'bd_uid' => $bd,
+            'open_leads' => $open, 'stale_touches' => $stale,
+            'leads_to_push' => $push, 'text' => $text,
+        ]);
+    }
+
 }
+
