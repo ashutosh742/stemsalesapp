@@ -126,12 +126,14 @@ class DayCeremonyController extends CI_Controller
         if (empty($uid)) {
             $this->_bad('uid is required.');
         }
-        if ($lat === null || $lat === '') {
-            $this->_bad('lat is required.');
-        }
-        if ($lng === null || $lng === '') {
-            $this->_bad('lng is required.');
-        }
+        // GPS-OPTIONAL on day-START (2026-06-13): the app promises the day can
+        // still start when the device GPS fails ("location recorded as
+        // unavailable"). Honour that contract - do NOT hard-block on missing
+        // lat/lng. Coerce blank coordinates to NULL so the model records the
+        // location as unavailable. Day-CLOSE still requires lat/lng (below).
+        if ($lat === '' || $lat === false) { $lat = null; }
+        if ($lng === '' || $lng === false) { $lng = null; }
+        $has_coords = ($lat !== null && $lng !== null);
 
         // === MIGRATION 087.1 - day-start discipline gate ===
         // parity_functional_fix_20260611: production ALWAYS starts the day - it
@@ -179,7 +181,7 @@ class DayCeremonyController extends CI_Controller
                 $this->_bad('Selfie not fresh - must be within '.$fresh_minutes.' minutes.');
             }
             // Anchor radius check - haversine vs home/office anchor.
-            $anchor = $this->db->select('lat,lng,radius_km')->from('day_start_home_anchor_v2')->where('user_id',$uid)->where('active',1)->get()->row();
+            $anchor = $has_coords ? $this->db->select('lat,lng,radius_km')->from('day_start_home_anchor_v2')->where('user_id',$uid)->where('active',1)->get()->row() : null;
             if ($anchor) {
                 $R = 6371.0; $dLat = deg2rad($lat - $anchor->lat); $dLng = deg2rad($lng - $anchor->lng);
                 $a = sin($dLat/2)*sin($dLat/2) + cos(deg2rad($anchor->lat))*cos(deg2rad($lat))*sin($dLng/2)*sin($dLng/2);
@@ -429,3 +431,4 @@ class DayCeremonyController extends CI_Controller
 // CI3 routing compatibility: file=DayCeremony.php, class=DayCeremonyController
 // Guard ensures alias is only created once even if file is included multiple times.
 if (!class_exists('Dayceremony', false)) { class_alias('DayCeremonyController', 'Dayceremony'); }
+
