@@ -443,4 +443,96 @@ class MobileMisc_api extends CI_Controller {
         }
         return $out;
     }
+
+    // ADDITIVE 2026-06-15: persist a CM decision on a legacy planner request.
+    // Fixes "approvals do not stick": the mobile screen previously only changed
+    // local state. This writes back to create_planner_request exactly like the
+    // web flow (Menu::CheckAllCreatePlannerRequestApprove/Reject):
+    //   approved = 1 (approve) or 2 (reject); records approved_by/date/message.
+    // Authorization: the request_user_id must belong to this CM's team. ASCII only.
+    // POST /api/planner/approval_decision { request_id, decision, comment, uid }
+    public function planner_approval_decision() {
+        if (!$this->_bearer()) return;
+
+        $request_id = (int)$this->input->post('request_id');
+        if ($request_id <= 0) $request_id = (int)$this->input->get('request_id');
+        $decision   = strtolower(trim((string)$this->input->post('decision')));
+        if ($decision === '') $decision = strtolower(trim((string)$this->input->get('decision')));
+        $comment    = (string)$this->input->post('comment');
+        if ($comment === '') $comment = (string)$this->input->get('comment');
+
+        $cm_uid = (int)$this->input->post('uid');
+        if ($cm_uid <= 0) $cm_uid = $this->_uid();
+
+        if ($request_id <= 0) {
+            $this->_json(array('ok'=>false,'success'=>false,'error'=>'request_id required'), 400);
+            return;
+        }
+        // Normalize decision to approve/reject; default to approve on unknown.
+        $approve_set = array('approve','approved','1','yes','accept');
+        $reject_set  = array('reject','rejected','2','no','decline');
+        if (in_array($decision, $reject_set, true)) {
+            $approved_val = 2;
+            $decision_label = 'rejected';
+        } else {
+            $approved_val = 1;
+            $decision_label = 'approved';
+        }
+
+        if (!$this->db->table_exists('create_planner_request')) {
+            $this->_json(array('ok'=>false,'success'=>false,'error'=>'queue table missing'), 200);
+            return;
+        }
+
+        // Load the request row.
+        $rq = $this->db->query(
+            "SELECT id, request_user_id, approved FROM create_planner_request WHERE id = ? LIMIT 1",
+            array($request_id)
+        );
+        $row = $rq ? $rq->row_array() : null;
+        if (!$row) {
+            $this->_json(array('ok'=>false,'success'=>false,'error'=>'request not found'), 200);
+            return;
+        }
+
+        // Authorization: the requesting BD must be on this CM's team.
+        // If we cannot resolve a team (cm_uid <= 0), fall through and allow,
+        // since the bearer is already validated; but when we do have a team,
+        // enforce membership so a CM cannot act on another cluster's request.
+        $bd_ids = $cm_uid > 0 ? $this->_cm_team_bd_ids($cm_uid) : array();
+        if (!empty($bd_ids)) {
+            $req_bd = (int)$row['request_user_id'];
+            if (!in_array($req_bd, array_map('intval', $bd_ids), true)) {
+                $this->_json(array('ok'=>false,'success'=>false,'error'=>'not in your team'), 403);
+                return;
+            }
+        }
+
+        // Idempotent: if already in the requested state, report success without rewrite.
+        if ((int)$row['approved'] === $approved_val) {
+            $this->_json(array(
+                'ok'=>true,'success'=>true,'already'=>true,
+                'request_id'=>$request_id,'decision'=>$decision_label,
+                'route'=>'api/planner/approval_decision'
+            ));
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $this->db->where('id', $request_id);
+        $ok = $this->db->update('create_planner_request', array(
+            'approved'         => $approved_val,
+            'approved_by'      => ($cm_uid > 0 ? $cm_uid : 0),
+            'approved_date'    => $now,
+            'approved_message' => $comment,
+        ));
+
+        $this->_json(array(
+            'ok'=>(bool)$ok,'success'=>(bool)$ok,
+            'request_id'=>$request_id,'decision'=>$decision_label,
+            'approved_by'=>($cm_uid > 0 ? $cm_uid : 0),'approved_at'=>$now,
+            'route'=>'api/planner/approval_decision'
+        ));
+    }
+
 }
