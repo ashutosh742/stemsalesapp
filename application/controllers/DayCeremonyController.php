@@ -174,11 +174,22 @@ class DayCeremonyController extends CI_Controller
             // Null-safe read of freshness minutes (fallback 5) - fixes latent null-deref.
             $fresh_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
                             ->where('config_key','day_start_photo_freshness_minutes')->get()->row();
-            $fresh_minutes = ($fresh_row && isset($fresh_row->config_value)) ? (int)$fresh_row->config_value : 5;
-            if (!$fresh_minutes) { $fresh_minutes = 5; }
+            // Default widened 5 -> 15 minutes (2026-06-14): real field GPS
+            // acquisition + UI interaction routinely exceeds 5 min, blocking
+            // honest reps. 15 min still blocks reuse of old gallery photos.
+            $fresh_minutes = ($fresh_row && isset($fresh_row->config_value)) ? (int)$fresh_row->config_value : 15;
+            if (!$fresh_minutes) { $fresh_minutes = 15; }
             $exif_ts = strtotime($photo_exif); $now_ts = time();
-            if ($exif_ts === false || ($now_ts - $exif_ts) > ($fresh_minutes * 60) || ($exif_ts - $now_ts) > 120) {
+            if ($exif_ts === false) {
+                // Unparseable EXIF: advisory only - do not hard-block. Record and proceed.
+                @error_log('[day_start] unparseable photo_exif_taken_at for uid '.$uid.' value='.$photo_exif);
+            } elseif (($now_ts - $exif_ts) > ($fresh_minutes * 60)) {
+                // Genuinely STALE photo (older than window) still blocks - anti-reuse.
                 $this->_bad('Selfie not fresh - must be within '.$fresh_minutes.' minutes.');
+            } elseif (($exif_ts - $now_ts) > 300) {
+                // Future-dated beyond 5 min => device clock skew, NOT the rep's
+                // fault. Advisory only: log and proceed (parity: day must start).
+                @error_log('[day_start] future-dated selfie EXIF (device clock skew) for uid '.$uid.' skew_sec='.($exif_ts - $now_ts));
             }
             // Anchor radius check - haversine vs home/office anchor.
             $anchor = $has_coords ? $this->db->select('lat,lng,radius_km')->from('day_start_home_anchor_v2')->where('user_id',$uid)->where('active',1)->get()->row() : null;
