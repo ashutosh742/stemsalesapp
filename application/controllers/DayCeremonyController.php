@@ -168,8 +168,18 @@ class DayCeremonyController extends CI_Controller
         } catch (\Throwable $t) { /* fail-open to global flag; never block on a config read error */ }
 
         if ($enforce) {
-            if (empty($selfie_url))  { $this->_bad('selfie_url is required (capture a selfie).'); }
-            if (empty($photo_exif))  { $this->_bad('photo_exif_taken_at is required.'); }
+            // ADVISORY 2026-06-15: production parity - the day must ALWAYS start.
+            // A missing selfie/EXIF no longer hard-blocks (device camera can fail,
+            // just like GPS). Record absence and proceed. Anti-reuse staleness on a
+            // PROVIDED photo still blocks below. Day-CLOSE accountability unchanged.
+            if (empty($selfie_url)) {
+                @error_log('[day_start] selfie not captured for uid '.$uid.' (advisory, proceeding)');
+            }
+            if (empty($photo_exif)) {
+                @error_log('[day_start] photo_exif missing for uid '.$uid.' (advisory, proceeding)');
+            }
+            $has_photo = (!empty($selfie_url) && !empty($photo_exif));
+            if ($has_photo) {
             // Photo freshness - must be within N minutes per day_ceremony_config_v2.
             // Null-safe read of freshness minutes (fallback 5) - fixes latent null-deref.
             $fresh_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
@@ -200,6 +210,7 @@ class DayCeremonyController extends CI_Controller
                 if ($dist_km > $anchor->radius_km) {
                     $this->_bad('Not within home/office anchor radius ('.round($dist_km,2).' km > '.$anchor->radius_km.' km).');
                 }
+            }
             }
         }
         // === END MIGRATION 087.1 enforcement ===
