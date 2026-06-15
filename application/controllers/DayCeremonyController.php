@@ -136,50 +136,26 @@ class DayCeremonyController extends CI_Controller
         $has_coords = ($lat !== null && $lng !== null);
 
         // === MIGRATION 087.1 - day-start discipline gate ===
-        // parity_functional_fix_20260611: production ALWAYS starts the day - it
-        // does not require a selfie/EXIF/freshness/geofence. The selfie + EXIF +
-        // freshness + anchor-radius checks below are now ADVISORY by default and
-        // only hard-block when the config flag 'day_start_discipline_enforce' in
-        // day_ceremony_config_v2 is set to '1'. Absent row or '0'/empty => OFF
-        // (production parity: day always starts). selfie_url/exif are still
-        // accepted and stored when provided, but never required when enforce is OFF.
+        // MANDATORY SELFIE FOR ALL ROLES (2026-06-15): a live selfie + EXIF is
+        // REQUIRED to start the day for every role - matching the production web
+        // app, where the Day Start form requires a photo (uploaded via
+        // $_FILES['filname']) before submit_day() runs. There is no opt-out and no
+        // per-role exemption. Missing selfie or EXIF hard-blocks with a 400 so the
+        // app prompts the user to capture one. Day-CLOSE selfie behaviour unchanged.
         $this->load->database();
         $selfie_url   = $this->input->post('selfie_url');
         $photo_exif   = $this->input->post('photo_exif_taken_at');
 
-        // Null-safe read of the enforcement flag (default OFF).
-        $enf_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
-                        ->where('config_key','day_start_discipline_enforce')->get()->row();
-        $enforce = ($enf_row && isset($enf_row->config_value) && (string)$enf_row->config_value === '1');
+        // MANDATORY for all roles - selfie + EXIF required.
+        if (empty($selfie_url)) {
+            $this->_bad('selfie_url is required (capture a selfie to start your day).');
+        }
+        if (empty($photo_exif)) {
+            $this->_bad('photo_exif_taken_at is required (capture a live selfie to start your day).');
+        }
+        $has_photo = true;
 
-        // PER-ROLE STRICT GATE (2026-06-12): parity downgraded the gate globally,
-        // but strict_gate_role_ids in day_ceremony_config_v2 names the roles that
-        // MUST stay gated (BD=3, CM=13, etc.). Enforce for those roles regardless
-        // of the global flag; all other roles keep production-parity behaviour.
-        try {
-            $sg_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
-                            ->where('config_key','strict_gate_role_ids')->get()->row();
-            if ($sg_row && isset($sg_row->config_value) && trim((string)$sg_row->config_value) !== '') {
-                $strict_ids = array_filter(array_map('intval', explode(',', (string)$sg_row->config_value)));
-                $u_row = $this->db->select('type_id')->from('user')->where('uid', (int)$uid)->get()->row();
-                $u_type = ($u_row && isset($u_row->type_id)) ? (int)$u_row->type_id : 0;
-                if ($u_type && in_array($u_type, $strict_ids, true)) { $enforce = true; }
-            }
-        } catch (\Throwable $t) { /* fail-open to global flag; never block on a config read error */ }
-
-        if ($enforce) {
-            // ADVISORY 2026-06-15: production parity - the day must ALWAYS start.
-            // A missing selfie/EXIF no longer hard-blocks (device camera can fail,
-            // just like GPS). Record absence and proceed. Anti-reuse staleness on a
-            // PROVIDED photo still blocks below. Day-CLOSE accountability unchanged.
-            if (empty($selfie_url)) {
-                @error_log('[day_start] selfie not captured for uid '.$uid.' (advisory, proceeding)');
-            }
-            if (empty($photo_exif)) {
-                @error_log('[day_start] photo_exif missing for uid '.$uid.' (advisory, proceeding)');
-            }
-            $has_photo = (!empty($selfie_url) && !empty($photo_exif));
-            if ($has_photo) {
+        {
             // Photo freshness - must be within N minutes per day_ceremony_config_v2.
             // Null-safe read of freshness minutes (fallback 5) - fixes latent null-deref.
             $fresh_row = $this->db->select('config_value')->from('day_ceremony_config_v2')
@@ -210,7 +186,6 @@ class DayCeremonyController extends CI_Controller
                 if ($dist_km > $anchor->radius_km) {
                     $this->_bad('Not within home/office anchor radius ('.round($dist_km,2).' km > '.$anchor->radius_km.' km).');
                 }
-            }
             }
         }
         // === END MIGRATION 087.1 enforcement ===
