@@ -156,7 +156,20 @@ class DayCeremony_model extends CI_Model
             ->row_array();
 
         if ($existing) {
-            return ['success' => false, 'error' => 'Day already started for today.'];
+            // ADDITIVE 2026-06-15: idempotent start. A day already started today is
+            // NOT an error - the user simply taps Start again or reopens the app.
+            // Return success with already_started so the app routes the user forward
+            // into the day flow instead of showing a hard red error. No duplicate
+            // row is ever created. day-CLOSE accountability is unchanged.
+            return [
+                'success'         => true,
+                'already_started' => true,
+                'ceremony_id'     => (int)($existing['id'] ?? 0),
+                'status'          => (string)($existing['status'] ?? 'day_started'),
+                'day_start_at'    => (string)($existing['day_start_at'] ?? ''),
+                'message'         => 'Day already started for today.',
+                'gate'            => ['status'=>'existing','distance_m'=>null,'is_mock'=>0],
+            ];
         }
 
         $data = [
