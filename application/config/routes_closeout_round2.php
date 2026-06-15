@@ -19,3 +19,4 @@ $route['api/mom/approval_queue']     = 'MobileMisc_api/mom_approval_queue';
 $route['api/mom/templates']          = 'MobileMisc_api/mom_templates';
 $route['api/my_tasks/today']         = 'MobileMisc_api/my_tasks_today';
 $route['api/planner/approval_queue'] = 'MobileMisc_api/planner_approval_queue';
+$route['api/planner/approval_decision'] = 'MobileMisc_api/planner_approval_decision';
