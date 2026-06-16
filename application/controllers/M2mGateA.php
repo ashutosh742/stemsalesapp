@@ -314,7 +314,7 @@ class M2mGateA extends CI_Controller
                       m.next_step_text, m.next_step_date', false)
             ->from('mom_quality_log q')
             ->join('mom_data m', 'm.id = q.mom_id', 'left')
-            ->where('DATE(q.graded_at)', $date)
+            ->where('DATE(q.graded_at) = ' . $this->db->escape($date), null, false)
             ->order_by('q.graded_at', 'asc')
             ->get()->result_array();
 
@@ -370,10 +370,14 @@ class M2mGateA extends CI_Controller
         $dq8_count = (int)$this->cfg('dq8_count', 3);
         $month = date('Y-m');
 
+        // Use a raw, fully-formed condition: CI3 active-record mangles a function
+        // expression used as a where() key (it omits the = operator). Embed the
+        // escaped month literal so the generated SQL is valid on MariaDB.
+        $month_esc = $this->db->escape($month); // includes quotes
         $row = $this->db->select('COUNT(*) AS n', false)
             ->from('mom_quality_log')
             ->where('bd_uid', $bd_uid)
-            ->where("DATE_FORMAT(graded_at, '%Y-%m')", $month)
+            ->where("DATE_FORMAT(graded_at, '%Y-%m') = " . $month_esc, null, false)
             ->where('quality_score <', $threshold)
             ->get()->row_array();
 
