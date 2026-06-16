@@ -658,3 +658,12 @@ if (file_exists($__rc)) {
     try { include($__rc); }
     catch (Throwable $_ex_rc) { log_message('error', 'routes_parity_closeout: ' . $_ex_rc->getMessage()); }
 }
+
+
+/* === CM Day Management fix 2026-06-16 (additive literal; included AFTER parity
+ * closeout so api/planner/pbni_list beats the StubController catch-all) === */
+$__rcdm = __DIR__ . '/routes_cm_daymgmt_fix_20260616.php';
+if (file_exists($__rcdm)) {
+    try { include($__rcdm); }
+    catch (Throwable $_ex_rcdm) { log_message('error', 'routes_cm_daymgmt_fix: ' . $_ex_rcdm->getMessage()); }
+}
