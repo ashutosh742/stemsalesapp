@@ -89,6 +89,18 @@ try {
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
 
+    // Relax STRICT mode for THIS harness session only (mirrors the live CI3 mysqli
+    // connection, which does not enforce STRICT_TRANS_TABLES). Session-scoped: does
+    // not change global config and never touches production. Lets seed rows omit the
+    // many legacy NOT-NULL-without-default mom_data columns the app fills elsewhere.
+    $pdo->exec("SET SESSION sql_mode=''");
+
+    // mom_data.id has no AUTO_INCREMENT in this schema; compute next id like the app does.
+    $next_mom_id = function() use ($pdo) {
+        $m = (int)$pdo->query("SELECT COALESCE(MAX(id),0)+1 FROM mom_data")->fetchColumn();
+        return $m;
+    };
+
     // Read config (single source of truth) so assertions are not hardcoded.
     $cfg = [];
     foreach ($pdo->query("SELECT cfg_key, cfg_value FROM m2m_config")->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -114,18 +126,18 @@ try {
     // purpose=1 so a Good grade yields a full score.
     $ins = $pdo->prepare(
         "INSERT INTO mom_data
-            (init_cmpid, user_id, tid, action_id, ccstatus,
+            (id, init_cmpid, user_id, tid, action_id, ccstatus,
              rp_present, prospect_funded, funded_lever, purpose_achieved,
              client_commitment, next_step_text, next_step_owner_uid, next_step_date,
              proposal_committed_date, rpmmom)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
     );
     $committed = date('Y-m-d', strtotime($TODAY . ' -10 days')); // old enough to breach
-    $ins->execute([$CID, $BD, 0, 0, 0,
+    $momA = $next_mom_id();
+    $ins->execute([$momA, $CID, $BD, 0, 0, 0,
         1, 1, 'csr', 1, 'hard',
         $MARKER . ' next step demo', $BD, date('Y-m-d', strtotime($TODAY . ' +3 days')),
         $committed, $MARKER]);
-    $momA = (int)$pdo->lastInsertId();
     $seed['mom_ids'][] = $momA;
 
     // Grade Good via HTTP -> expect full weighted score and quality=true.
@@ -149,9 +161,9 @@ try {
         'gateA: complete MoM should not be blocked', $errors);
 
     // Vague-blocks-advance + mandatory-field gate: seed an INCOMPLETE MoM.
-    $ins2 = $pdo->prepare("INSERT INTO mom_data (init_cmpid, user_id, tid, action_id, ccstatus, rpmmom) VALUES (?,?,?,?,?,?)");
-    $ins2->execute([$CID, $BD, 0, 0, 0, $MARKER]);
-    $momIncomplete = (int)$pdo->lastInsertId();
+    $ins2 = $pdo->prepare("INSERT INTO mom_data (id, init_cmpid, user_id, tid, action_id, ccstatus, rpmmom) VALUES (?,?,?,?,?,?,?)");
+    $momIncomplete = $next_mom_id();
+    $ins2->execute([$momIncomplete, $CID, $BD, 0, 0, 0, $MARKER]);
     $seed['mom_ids'][] = $momIncomplete;
 
     $cb = http_call('GET', "$BASE/api/m2m/gatea/check?mom_id={$momIncomplete}", $TOKEN);
@@ -172,9 +184,9 @@ try {
     // DQ8: drive below-threshold meetings up to dq8_count for this BD this month.
     // Vague rows already count as below threshold; add more to reach the count.
     for ($i = 0; $i < ($dq8_count + 1); $i++) {
-        $insN = $pdo->prepare("INSERT INTO mom_data (init_cmpid, user_id, tid, action_id, ccstatus, rp_present, prospect_funded, purpose_achieved, rpmmom) VALUES (?,?,?,?,?,?,?,?,?)");
-        $insN->execute([$CID, $BD, 0, 0, 0, 0, 0, 0, $MARKER]);
-        $mid = (int)$pdo->lastInsertId();
+        $insN = $pdo->prepare("INSERT INTO mom_data (id, init_cmpid, user_id, tid, action_id, ccstatus, rp_present, prospect_funded, purpose_achieved, rpmmom) VALUES (?,?,?,?,?,?,?,?,?,?)");
+        $mid = $next_mom_id();
+        $insN->execute([$mid, $CID, $BD, 0, 0, 0, 0, 0, 0, $MARKER]);
         $seed['mom_ids'][] = $mid;
         $gg = http_call('POST', "$BASE/api/m2m/gatea/grade", $TOKEN,
             ['mom_id' => $mid, 'mom_grade' => 'vague', 'graded_by' => $MGR]);
