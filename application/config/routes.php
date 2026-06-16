@@ -652,6 +652,17 @@ if (file_exists($__rsf)) {
 }
 
 
+/* === M2M Assurance routes 2026-06-16 (additive; included BEFORE parity_closeout
+ * so the literal /api/m2m/* routes are inserted into the $route table ahead of
+ * the StubController api/(:any) catch-all that parity_closeout appends, and
+ * therefore win under CI3 first-match-wins). New controllers only; no existing
+ * route or method touched. Guarded try/catch include like the other fragments. */
+$__rm2m = __DIR__ . '/routes_m2m_assurance_20260616.php';
+if (file_exists($__rm2m)) {
+    try { include($__rm2m); }
+    catch (Throwable $_ex_m2m) { log_message('error', 'routes_m2m_assurance: ' . $_ex_m2m->getMessage()); }
+}
+
 /* === parity closeout routes 2026-06-11 (additive, maps app paths to existing methods, very last include) === */
 $__rc = __DIR__ . '/routes_parity_closeout_20260611.php';
 if (file_exists($__rc)) {
