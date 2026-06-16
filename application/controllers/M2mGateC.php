@@ -267,9 +267,11 @@ class M2m_gate_c extends CI_Controller
     // ---------- helpers ----------
     private function _sent_on_time_count($cids, $sla, $month_start, $month_end)
     {
-        $rows = $this->db->select('cid_id, proposal_committed_date, m2m_proposal_sent_date, proposal_shared_date', false)
+        // mom_data links the lead via init_cmpid (not cid_id). $cids come from
+        // m2m_manager_closure.cid_id, which equals mom_data.init_cmpid.
+        $rows = $this->db->select('init_cmpid, proposal_committed_date, m2m_proposal_sent_date, proposal_shared_date', false)
             ->from('mom_data')
-            ->where_in('cid_id', $cids)
+            ->where_in('init_cmpid', $cids)
             ->where('proposal_committed_date IS NOT NULL')
             ->get()->result_array();
         $n = 0;

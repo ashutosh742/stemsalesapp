@@ -114,13 +114,15 @@ try {
     // purpose=1 so a Good grade yields a full score.
     $ins = $pdo->prepare(
         "INSERT INTO mom_data
-            (cid_id, uid, rp_present, prospect_funded, funded_lever, purpose_achieved,
+            (init_cmpid, user_id, tid, action_id, ccstatus,
+             rp_present, prospect_funded, funded_lever, purpose_achieved,
              client_commitment, next_step_text, next_step_owner_uid, next_step_date,
              proposal_committed_date, rpmmom)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
     );
     $committed = date('Y-m-d', strtotime($TODAY . ' -10 days')); // old enough to breach
-    $ins->execute([$CID, $BD, 1, 1, 'csr', 1, 'hard',
+    $ins->execute([$CID, $BD, 0, 0, 0,
+        1, 1, 'csr', 1, 'hard',
         $MARKER . ' next step demo', $BD, date('Y-m-d', strtotime($TODAY . ' +3 days')),
         $committed, $MARKER]);
     $momA = (int)$pdo->lastInsertId();
@@ -147,8 +149,8 @@ try {
         'gateA: complete MoM should not be blocked', $errors);
 
     // Vague-blocks-advance + mandatory-field gate: seed an INCOMPLETE MoM.
-    $ins2 = $pdo->prepare("INSERT INTO mom_data (cid_id, uid, rpmmom) VALUES (?,?,?)");
-    $ins2->execute([$CID, $BD, $MARKER]);
+    $ins2 = $pdo->prepare("INSERT INTO mom_data (init_cmpid, user_id, tid, action_id, ccstatus, rpmmom) VALUES (?,?,?,?,?,?)");
+    $ins2->execute([$CID, $BD, 0, 0, 0, $MARKER]);
     $momIncomplete = (int)$pdo->lastInsertId();
     $seed['mom_ids'][] = $momIncomplete;
 
@@ -170,8 +172,8 @@ try {
     // DQ8: drive below-threshold meetings up to dq8_count for this BD this month.
     // Vague rows already count as below threshold; add more to reach the count.
     for ($i = 0; $i < ($dq8_count + 1); $i++) {
-        $insN = $pdo->prepare("INSERT INTO mom_data (cid_id, uid, rp_present, prospect_funded, purpose_achieved, rpmmom) VALUES (?,?,?,?,?,?)");
-        $insN->execute([$CID, $BD, 0, 0, 0, $MARKER]);
+        $insN = $pdo->prepare("INSERT INTO mom_data (init_cmpid, user_id, tid, action_id, ccstatus, rp_present, prospect_funded, purpose_achieved, rpmmom) VALUES (?,?,?,?,?,?,?,?,?)");
+        $insN->execute([$CID, $BD, 0, 0, 0, 0, 0, 0, $MARKER]);
         $mid = (int)$pdo->lastInsertId();
         $seed['mom_ids'][] = $mid;
         $gg = http_call('POST', "$BASE/api/m2m/gatea/grade", $TOKEN,
@@ -279,7 +281,7 @@ try {
                 $pdo->prepare("DELETE FROM m2m_disqualifier_log WHERE cid_id=?")->execute([$cid]);
                 $pdo->prepare("DELETE FROM m2m_disqualifier_log WHERE subject_uid=990111")->execute();
                 $pdo->prepare("DELETE FROM m2m_manager_closure WHERE cid_id=?")->execute([$cid]);
-                $pdo->prepare("DELETE FROM mom_data WHERE cid_id=?")->execute([$cid]);
+                $pdo->prepare("DELETE FROM mom_data WHERE init_cmpid=?")->execute([$cid]);
             }
 
             // Residue assertion across all seeded surfaces.
