@@ -82,8 +82,8 @@ class M2m_gate_b extends CI_Controller
         $warn = max(1, $sla - 2); // day-3 warn when SLA=5
 
         $rows = $this->db
-            ->select('m.id AS mom_id, m.cid_id,
-                      COALESCE(m.bd_uid, m.uid) AS bd_uid,
+            ->select('m.id AS mom_id, m.init_cmpid AS cid_id,
+                      m.user_id AS bd_uid,
                       m.proposal_committed_date,
                       m.m2m_proposal_sent_date,
                       m.proposal_shared_date', false)

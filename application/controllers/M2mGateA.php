@@ -137,11 +137,12 @@ class M2m_gate_a extends CI_Controller
             return $this->_json(['ok' => false, 'error' => 'mom_grade_must_be_good_partial_or_vague'], 422);
         }
 
-        $mom = $this->db->select('id, bd_uid, uid, rp_present, prospect_funded, purpose_achieved')
+        $mom = $this->db->select('id, user_id, rp_present, prospect_funded, purpose_achieved')
             ->from('mom_data')->where('id', $mom_id)->get()->row_array();
         if (!$mom) return $this->_json(['ok' => false, 'error' => 'mom_not_found', 'mom_id' => $mom_id], 422);
 
-        $bd_uid = (int)(isset($mom['bd_uid']) && $mom['bd_uid'] !== null ? $mom['bd_uid'] : (isset($mom['uid']) ? $mom['uid'] : 0));
+        // mom_data has no bd_uid; the BD is user_id. mom_quality_log.bd_uid stores it.
+        $bd_uid = (int)(isset($mom['user_id']) ? $mom['user_id'] : 0);
 
         $w  = $this->weights();
         $rp = ((int)$mom['rp_present'] === 1) ? 1 : 0;
@@ -289,7 +290,7 @@ class M2m_gate_a extends CI_Controller
         $rows = $this->db
             ->select('q.id, q.mom_id, q.bd_uid, q.quality_grade, q.quality_score,
                       q.gates_passed, q.gates_total, q.graded_at,
-                      m.cid_id, m.rp_present, m.prospect_funded, m.purpose_achieved,
+                      m.init_cmpid, m.rp_present, m.prospect_funded, m.purpose_achieved,
                       m.next_step_text, m.next_step_date', false)
             ->from('mom_quality_log q')
             ->join('mom_data m', 'm.id = q.mom_id', 'left')
@@ -314,7 +315,7 @@ class M2m_gate_a extends CI_Controller
             $out[] = [
                 'date'       => $date,
                 'bd'         => (int)$r['bd_uid'],
-                'cid'        => isset($r['cid_id']) ? (int)$r['cid_id'] : null,
+                'cid'        => isset($r['init_cmpid']) ? (int)$r['init_cmpid'] : null,
                 'mom_id'     => (int)$r['mom_id'],
                 'rp'         => ($r['rp_present'] === null) ? null : (int)$r['rp_present'],
                 'fit'        => ($r['prospect_funded'] === null) ? null : (int)$r['prospect_funded'],
