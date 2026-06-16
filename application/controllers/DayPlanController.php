@@ -35,7 +35,7 @@ class DayPlanController extends CI_Controller {
         if (hash_equals($expected, $tok)) return true;
         // Per-user daily JWT: sha1(secret|uid|YYYY-MM-DD), accept today and yesterday
         $secret = getenv('STEM_DIGEST_TOKEN') ?: '4eBaiAT7r4zu6OK3b8evjLNia1D7RGgb0qRTuLJfUSo';
-        $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')));
+        $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')));
         $cands = array();
         foreach (array('uid','bd_uid','cm_uid','user_id') as $k) {
             if (isset($_GET[$k]) && (int)$_GET[$k] > 0)  $cands[(int)$_GET[$k]]  = 1;

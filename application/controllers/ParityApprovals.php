@@ -62,7 +62,7 @@ class ParityApprovals extends CI_Controller {
         if (hash_equals($secret, $token)) return true;
 
         // Per-user JWT: sha1(secret|uid|YYYY-MM-DD), today and yesterday
-        $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')));
+        $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')));
         $cands = array();
         foreach (array('user_id','uid','bd_uid','cm_uid','acm_uid') as $k) {
             if (isset($_GET[$k]) && (int)$_GET[$k] > 0) $cands[(int)$_GET[$k]] = 1;

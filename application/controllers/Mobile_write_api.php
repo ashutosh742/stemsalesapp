@@ -1727,14 +1727,15 @@ class Mobile_write_api extends CI_Controller {
         if ((int)$task['cid_id'] !== $cid_id) return $this->_deny(400, 'task does not belong to cid_id');
 
         $row = [
-            // identity
+            // identity (momv2colfix 20260617: live mom_data has init_cmpid not init_id,
+            // has no submitted_at and no mom_text columns. Map to real columns; keep
+            // v2_submitted_at and company_name which DO exist. Free-text body -> rpmmom.)
             'user_id'      => $uid,
-            'init_id'      => $cid_id,
+            'init_cmpid'   => $cid_id,
             'tid'          => $tid,
-            'submitted_at' => $now,
             'v2_submitted_at' => $now,
-            // MoM body
-            'mom_text'     => (string)$this->_post('mom_text'),
+            // MoM body (rpmmom is the real free-text MoM column in mom_data)
+            'rpmmom'       => (string)$this->_post('mom_text'),
             'company_name' => (string)$this->_post('company_name', ''),
             // DM contact block (cstatus 6 gate)
             'dm_name'              => (string)$this->_post('dm_name', ''),
@@ -1751,10 +1752,14 @@ class Mobile_write_api extends CI_Controller {
             'proposal_intent_schools'    => (int)$this->_post('proposal_intent_schools', 0),
             'proposal_intent_budget_rs'  => (string)$this->_post('proposal_intent_budget_rs', '0'),
             'proposal_intent_location'   => (string)$this->_post('proposal_intent_location', ''),
-            'expected_close_date'        => (string)$this->_post('expected_close_date', ''),
+            // momv2datefix 20260617: expected_close_date is a nullable DATE; under
+            // STRICT_TRANS_TABLES an empty string is rejected. Coalesce blank to NULL.
+            'expected_close_date'        => (($_ecd = trim((string)$this->_post('expected_close_date', ''))) !== '' ? $_ecd : null),
             'win_probability'            => (int)$this->_post('win_probability', 0),
             // quality
-            'mom_quality_grade'    => (string)$this->_post('mom_quality_grade', ''),
+            // gradefix 20260617: mom_quality_grade is enum('A','B','C','D'); under
+            // strict mode an empty string truncates. Coalesce invalid/blank to NULL.
+            'mom_quality_grade'    => (in_array(($_mqg = strtoupper(trim((string)$this->_post('mom_quality_grade', '')))), ['A','B','C','D'], true) ? $_mqg : null),
             'mom_quality_score'    => (int)$this->_post('mom_quality_score', 0),
             // approval status (defaults to pending)
             'approved_status'      => 'Pending',

@@ -59,7 +59,7 @@ class DisciplineApi extends CI_Controller {
             }
             // Per-user daily JWT: sha1(secret|uid|YYYY-MM-DD), accept today and yesterday
             $secret = getenv('STEM_DIGEST_TOKEN') ?: self::DIGEST_TOKEN;
-            $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')));
+            $days = array(date('Y-m-d'), date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')));
             $cands = array();
             foreach (array('uid','bd_uid','cm_uid','user_id') as $k) {
                 if (isset($_GET[$k]) && (int)$_GET[$k] > 0)  $cands[(int)$_GET[$k]]  = 1;
