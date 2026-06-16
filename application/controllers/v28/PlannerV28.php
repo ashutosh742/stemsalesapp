@@ -463,6 +463,9 @@ class PlannerV28 extends CI_Controller {
         if ($date) {
             $this->db->where('DATE(new_task_date)', $date);
         }
+        // sweep_fix_20260616 (H1): hide carry rows already resolved via
+        // v2_bulk_resolve_carry (additive carry_resolved_at column).
+        $this->db->where('carry_resolved_at IS NULL', null, false);
         $this->db->order_by('re_created_at', 'DESC');
         $this->db->limit(100);
         $rows = $this->db->get('planner_log')->result_array();
@@ -918,14 +921,64 @@ class PlannerV28 extends CI_Controller {
     {
         if ( ! $this->auth_check()) { return; }
 
-        $request_id   = (int) $this->input->post('request_id');
-        $target_bd    = (int) $this->input->post('target_bd_uid');
-        $decided_by   = (int) $this->input->post('decided_by_uid');
+        // sweep_fix_20260616 (B1): same table-split class as v2_resolve_request.
+        // The CM Approval Queue (v2_cm_queue) serves cm_daily_plan rows keyed by
+        // `id`, but v2_assign historically UPDATEd bd_request by that id. Net
+        // effect: the CM's plan row was never assigned AND an unrelated bd_request
+        // row with the same id was silently corrupted to approved. Fix (additive,
+        // no regression): accept the queue field names too, then route the write
+        // to whichever table the id actually belongs to. cm_daily_plan first
+        // (the row the CM is actually viewing); the legacy bd_request path is
+        // preserved verbatim for genuine bd_request ids.
+
+        // Identifier: request_id OR id OR plan_id (first one > 0 wins).
+        $request_id = (int) $this->input->post('request_id');
+        if ($request_id <= 0) { $request_id = (int) $this->input->post('id'); }
+        if ($request_id <= 0) { $request_id = (int) $this->input->post('plan_id'); }
+
+        // Target BD: target_bd_uid OR linked_bd_uid OR bd_uid.
+        $target_bd = (int) $this->input->post('target_bd_uid');
+        if ($target_bd <= 0) { $target_bd = (int) $this->input->post('linked_bd_uid'); }
+        if ($target_bd <= 0) { $target_bd = (int) $this->input->post('bd_uid'); }
+
+        // Approver: decided_by_uid OR cm_uid OR the authenticated uid.
+        $decided_by = (int) $this->input->post('decided_by_uid');
+        if ($decided_by <= 0) { $decided_by = (int) $this->input->post('cm_uid'); }
+        if ($decided_by <= 0 && $this->auth_uid > 0) { $decided_by = (int) $this->auth_uid; }
 
         if ($request_id <= 0) {
             return $this->json_out(['ok' => false, 'error' => 'request_id required'], 400);
         }
 
+        $now = date('Y-m-d H:i:s');
+
+        // Route 1 (root-cause fix): the id is a cm_daily_plan row -> assign THAT
+        // row. Writes linked_bd_uid (the column v2_cm_queue already selects) and
+        // marks the plan approved so it leaves the pending queue.
+        $plan = $this->db->where('id', $request_id)->get('cm_daily_plan')->row_array();
+        if ($plan) {
+            // status is an ENUM('planned','done','skipped','rolled') - assignment
+            // is recorded via linked_bd_uid + approval_status='approved' (both
+            // valid) so the row leaves the pending queue; status is left intact.
+            $update = [
+                'linked_bd_uid'   => $target_bd > 0 ? $target_bd : null,
+                'approval_status' => 'approved',
+                'approved_by_uid' => $decided_by > 0 ? $decided_by : null,
+                'approved_at'     => $now,
+            ];
+            $this->db->where('id', $request_id)->update('cm_daily_plan', $update);
+
+            return $this->json_out([
+                'ok'         => true,
+                'success'    => true,
+                'request_id' => $request_id,
+                'id'         => $request_id,
+                'table'      => 'cm_daily_plan',
+                'data'       => $update,
+            ]);
+        }
+
+        // Route 2 (legacy, unchanged): the id is a genuine bd_request row.
         $row = $this->db->where('id', $request_id)->get('bd_request')->row_array();
         if ( ! $row) {
             return $this->json_out(['ok' => false, 'error' => 'request_not_found'], 404);
@@ -935,8 +988,8 @@ class PlannerV28 extends CI_Controller {
             'target_bd_uid' => $target_bd > 0 ? $target_bd : null,
             'status'        => 'approved',
             'decided_by_uid' => $decided_by > 0 ? $decided_by : null,
-            'decided_at'    => date('Y-m-d H:i:s'),
-            'updated_at'    => date('Y-m-d H:i:s'),
+            'decided_at'    => $now,
+            'updated_at'    => $now,
         ];
         $this->db->where('id', $request_id)->update('bd_request', $update);
 
@@ -944,6 +997,8 @@ class PlannerV28 extends CI_Controller {
             'ok'         => true,
             'success'    => true,
             'request_id' => $request_id,
+            'id'         => $request_id,
+            'table'      => 'bd_request',
             'data'       => $update,
         ]);
     }
@@ -964,17 +1019,33 @@ class PlannerV28 extends CI_Controller {
             return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
         }
 
+        // sweep_fix_20260616 (H1): this method previously only SELECTed and
+        // returned num_rows() as "resolved" - it performed NO write, so carry-
+        // overs stayed pending in v2_pending_carry after "resolved N". Fix
+        // (additive): actually mark the carry rows resolved. Resolution is
+        // recorded in the additive column carry_resolved_at (idempotent migration);
+        // v2_pending_carry now excludes rows where it is set, so resolved carry-
+        // overs leave the queue. Guarded: only stamp rows not already resolved.
         $this->db->select('id');
         $this->db->where('to_user', $uid);
         $this->db->where('DATE(new_task_date)', $date);
-        $count_q = $this->db->get('planner_log');
-        $resolved = $count_q->num_rows();
+        $this->db->where('carry_resolved_at IS NULL', null, false);
+        $rows = $this->db->get('planner_log')->result_array();
+        $ids  = array_map(function ($r) { return (int) $r['id']; }, $rows);
+
+        $resolved = 0;
+        if ( ! empty($ids)) {
+            $this->db->where_in('id', $ids);
+            $this->db->where('carry_resolved_at IS NULL', null, false);
+            $this->db->update('planner_log', ['carry_resolved_at' => date('Y-m-d H:i:s')]);
+            $resolved = $this->db->affected_rows();
+        }
 
         $this->json_out([
             'ok'       => true,
             'success'  => true,
             'resolved' => $resolved,
-            'data'     => ['uid' => $uid, 'date' => $date, 'note' => 'carry_log_fetched'],
+            'data'     => ['uid' => $uid, 'date' => $date, 'ids' => $ids, 'note' => 'carry_resolved'],
         ]);
     }
 
@@ -1230,6 +1301,9 @@ class PlannerV28 extends CI_Controller {
         if ($date) {
             $this->db->where('DATE(new_task_date)', $date);
         }
+        // sweep_fix_20260616 (H1): hide carry rows already resolved via
+        // v2_bulk_resolve_carry (additive carry_resolved_at column).
+        $this->db->where('carry_resolved_at IS NULL', null, false);
         $this->db->order_by('re_created_at', 'DESC');
         $this->db->limit(100);
         $rows = $this->db->get('planner_log')->result_array();

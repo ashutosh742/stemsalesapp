@@ -641,6 +641,17 @@ if (file_exists($__rrv)) {
 }
 
 
+/* === backend defect sweep 2026-06-16 (additive). MUST be included BEFORE the
+   parity_closeout include below: its literal keys must be inserted ahead of the
+   api/(:any) catch-all (defined in routes_parity_closeout_20260611.php) so
+   first-match-wins routes them to real controllers instead of StubController. === */
+$__rsf = __DIR__ . '/routes_sweep_fix_20260616.php';
+if (file_exists($__rsf)) {
+    try { include($__rsf); }
+    catch (Throwable $_ex_rsf) { log_message('error', 'routes_sweep_fix_20260616: ' . $_ex_rsf->getMessage()); }
+}
+
+
 /* === parity closeout routes 2026-06-11 (additive, maps app paths to existing methods, very last include) === */
 $__rc = __DIR__ . '/routes_parity_closeout_20260611.php';
 if (file_exists($__rc)) {

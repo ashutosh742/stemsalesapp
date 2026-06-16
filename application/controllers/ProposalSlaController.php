@@ -183,12 +183,19 @@ class Proposal_sla extends CI_Controller
         $sla_id = (int)$this->input->post("sla_id");
         if ($sla_id <= 0) return $this->_json(["ok" => false, "error" => "sla_id required"], 400);
         try {
+            // sweep_fix_20260616 (M2): align status vocabulary. mark_sent
+            // previously wrote status='sent', a value NO read filter matched
+            // (queue/open_for_bd use open/extended/pending; the submit flow uses
+            // 'submitted'). A "sent" proposal therefore silently disappeared from
+            // every list. Use 'submitted' - the same terminal vocabulary the
+            // submit_proof flow already writes - so the state is consistent and
+            // reportable. (proposal_submitted_at still records the send time.)
             $this->db->where("id", $sla_id)->update("proposal_sla_tracker", [
-                "status"   => "sent",
+                "status"   => "submitted",
                 "proposal_submitted_at" => date("Y-m-d H:i:s"),
             ]);
             $affected = $this->db->affected_rows();
-            $this->_json(["ok" => true, "sla_id" => $sla_id, "affected" => $affected], 200);
+            $this->_json(["ok" => true, "sla_id" => $sla_id, "status" => "submitted", "affected" => $affected], 200);
         } catch (Exception $e) {
             $this->_json(["ok" => false, "error" => "db_error", "detail" => $e->getMessage()], 500);
         }

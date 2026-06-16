@@ -304,6 +304,35 @@ class FieldResilience_model extends CI_Model
         return (int) $this->db->insert_id();
     }
 
+    /**
+     * List call_log rows for a BD (read side of call_log).
+     * Added 2026-06-16 (M4): GET api/field_resilience/call_log was routed to a
+     * write-only handler and could never list. This is the read companion.
+     * Optional $cid_id narrows to a single lead. Returns newest first.
+     *
+     * @param string   $bd_uid
+     * @param int|null $cid_id
+     * @param int      $limit
+     * @return array
+     */
+    public function list_call_logs($bd_uid, $cid_id = null, $limit = 100)
+    {
+        if (!$this->db->table_exists('call_log')) {
+            return array();
+        }
+        $limit = max(1, min(500, (int) $limit));
+        $this->db->from('call_log');
+        if ($bd_uid !== '' && $bd_uid !== null) {
+            $this->db->where('bd_uid', $bd_uid);
+        }
+        if ($cid_id !== null && (int) $cid_id > 0) {
+            $this->db->where('cid_id', (int) $cid_id);
+        }
+        $this->db->order_by('id', 'DESC');
+        $this->db->limit($limit);
+        return $this->db->get()->result_array();
+    }
+
     // -----------------------------------------------------------------------
     // G.5 OCR Business-Card Scan
     // -----------------------------------------------------------------------

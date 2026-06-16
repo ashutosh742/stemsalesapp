@@ -479,17 +479,57 @@ class MobileMisc_api extends CI_Controller {
             $decision_label = 'approved';
         }
 
-        if (!$this->db->table_exists('create_planner_request')) {
-            $this->_json(array('ok'=>false,'success'=>false,'error'=>'queue table missing'), 200);
-            return;
+        // sweep_fix_20260616 (M1): the approval queue can serve rows from EITHER
+        // create_planner_request OR task_plan_for_today (see planner_approval_queue
+        // elseif branch). This decision endpoint only ever updated
+        // create_planner_request, so a decision on a task_plan_for_today-sourced
+        // row was silently lost. Fix (additive): detect which table the id belongs
+        // to and update that one. create_planner_request is tried first (legacy).
+        $row = null;
+        if ($this->db->table_exists('create_planner_request')) {
+            $rq = $this->db->query(
+                "SELECT id, request_user_id, approved FROM create_planner_request WHERE id = ? LIMIT 1",
+                array($request_id)
+            );
+            $row = $rq ? $rq->row_array() : null;
         }
 
-        // Load the request row.
-        $rq = $this->db->query(
-            "SELECT id, request_user_id, approved FROM create_planner_request WHERE id = ? LIMIT 1",
-            array($request_id)
-        );
-        $row = $rq ? $rq->row_array() : null;
+        // Route 2: the id is a task_plan_for_today row.
+        if (!$row && $this->db->table_exists('task_plan_for_today')) {
+            $tq = $this->db->query(
+                "SELECT id, user_id AS request_user_id, approvel_status FROM task_plan_for_today WHERE id = ? LIMIT 1",
+                array($request_id)
+            );
+            $trow = $tq ? $tq->row_array() : null;
+            if ($trow) {
+                $bd_ids = $cm_uid > 0 ? $this->_cm_team_bd_ids($cm_uid) : array();
+                if (!empty($bd_ids)) {
+                    $req_bd = (int)$trow['request_user_id'];
+                    if (!in_array($req_bd, array_map('intval', $bd_ids), true)) {
+                        $this->_json(array('ok'=>false,'success'=>false,'error'=>'not in your team'), 403);
+                        return;
+                    }
+                }
+                $tpft_status = $decision_label === 'rejected' ? 'rejected' : 'approved';
+                $now = date('Y-m-d H:i:s');
+                $set = array('approvel_status' => $tpft_status);
+                $tcols = $this->db->list_fields('task_plan_for_today');
+                if (in_array('approved_by', $tcols, true))   { $set['approved_by'] = ($cm_uid > 0 ? $cm_uid : 0); }
+                if (in_array('approved_date', $tcols, true)) { $set['approved_date'] = $now; }
+                if (in_array('approved_message', $tcols, true)) { $set['approved_message'] = $comment; }
+                $this->db->where('id', $request_id);
+                $ok = $this->db->update('task_plan_for_today', $set);
+                $this->_json(array(
+                    'ok'=>(bool)$ok,'success'=>(bool)$ok,
+                    'request_id'=>$request_id,'decision'=>$decision_label,
+                    'table'=>'task_plan_for_today',
+                    'approved_by'=>($cm_uid > 0 ? $cm_uid : 0),'approved_at'=>$now,
+                    'route'=>'api/planner/approval_decision'
+                ));
+                return;
+            }
+        }
+
         if (!$row) {
             $this->_json(array('ok'=>false,'success'=>false,'error'=>'request not found'), 200);
             return;
@@ -532,6 +572,176 @@ class MobileMisc_api extends CI_Controller {
             'request_id'=>$request_id,'decision'=>$decision_label,
             'approved_by'=>($cm_uid > 0 ? $cm_uid : 0),'approved_at'=>$now,
             'route'=>'api/planner/approval_decision'
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // scope_options() - GET /api/report/scope_options?uid=<N>
+    // Added 2026-06-16 (H10). Returns role-scoped region -> cluster -> bd lists
+    // for the report/filter pickers.
+    //
+    // Scoping (derived from real data, not hardcoded):
+    //   - region comes from cluster_master.region (West/North/South/East).
+    //   - clusters come from cluster_master (cluster_id, cluster_name, region).
+    //   - bds are type_id=3 users linked to a cluster via user.cluster_master_id.
+    //
+    //   Admin / SuperAdmin (user.type_id IN 1,2) -> org-wide (all regions,
+    //     all active clusters, all active BDs).
+    //   Any other role -> scoped to the caller's own region, derived from the
+    //     caller's cluster_master_id. Only clusters in that region and BDs in
+    //     those clusters are returned. If the caller has no cluster mapping we
+    //     return an empty scoped set with reason=no_scope (no silent org-wide
+    //     leak), so the picker shows nothing rather than everything.
+    // -----------------------------------------------------------------------
+    public function scope_options() {
+        if (!$this->_bearer()) return;
+        $uid = $this->_uid();
+        if ($uid <= 0) {
+            $this->_json(array('ok'=>false,'error'=>'uid_required','route'=>'api/report/scope_options'), 400);
+            return;
+        }
+
+        $me = $this->db->query(
+            "SELECT uid, name, type_id, cluster_master_id FROM user WHERE uid = ? LIMIT 1",
+            array($uid)
+        )->row_array();
+        if (!$me) {
+            $this->_json(array('ok'=>false,'error'=>'unknown_uid','route'=>'api/report/scope_options'), 404);
+            return;
+        }
+
+        $type_id   = (int)$me['type_id'];
+        $is_org    = in_array($type_id, array(1, 2), true);
+        $my_region = null;
+        $reason    = null;
+
+        if (!$is_org) {
+            // Derive the caller's region from their cluster mapping.
+            $my_cluster = (int)$me['cluster_master_id'];
+            if ($my_cluster > 0) {
+                $cr = $this->db->query(
+                    "SELECT region FROM cluster_master WHERE cluster_id = ? LIMIT 1",
+                    array($my_cluster)
+                )->row_array();
+                if ($cr && isset($cr['region']) && $cr['region'] !== '') {
+                    $my_region = (string)$cr['region'];
+                }
+            }
+            if ($my_region === null) {
+                // No mapping -> return an empty scoped set rather than org-wide.
+                $this->_json(array(
+                    'ok'=>true,'success'=>true,'stub'=>false,
+                    'scope'=>'self','role_type_id'=>$type_id,
+                    'regions'=>array(),'clusters'=>array(),'bds'=>array(),
+                    'reason'=>'no_scope',
+                    'route'=>'api/report/scope_options','generated_at'=>date('c'),
+                ));
+                return;
+            }
+        }
+
+        // ----- regions -----
+        if ($is_org) {
+            $rq = $this->db->query(
+                "SELECT DISTINCT region FROM cluster_master
+                 WHERE region IS NOT NULL AND region <> '' AND is_active = 1
+                 ORDER BY region ASC"
+            );
+        } else {
+            $rq = $this->db->query(
+                "SELECT DISTINCT region FROM cluster_master
+                 WHERE region = ? AND is_active = 1 ORDER BY region ASC",
+                array($my_region)
+            );
+        }
+        $regions = array();
+        if ($rq) { foreach ($rq->result_array() as $r) { $regions[] = $r['region']; } }
+
+        // ----- clusters -----
+        if ($is_org) {
+            $cq = $this->db->query(
+                "SELECT cluster_id, cluster_name, region FROM cluster_master
+                 WHERE is_active = 1 ORDER BY region ASC, cluster_name ASC"
+            );
+        } else {
+            $cq = $this->db->query(
+                "SELECT cluster_id, cluster_name, region FROM cluster_master
+                 WHERE region = ? AND is_active = 1 ORDER BY cluster_name ASC",
+                array($my_region)
+            );
+        }
+        $clusters    = array();
+        $cluster_ids = array();
+        if ($cq) {
+            foreach ($cq->result_array() as $c) {
+                $cid = (int)$c['cluster_id'];
+                $clusters[] = array(
+                    'cluster_id'   => $cid,
+                    'cluster_name' => $c['cluster_name'],
+                    'region'       => $c['region'],
+                );
+                $cluster_ids[] = $cid;
+            }
+        }
+
+        // ----- bds (type_id=3, active, linked to an in-scope cluster) -----
+        $bds = array();
+        if ($is_org) {
+            $bq = $this->db->query(
+                "SELECT u.uid, u.name, u.cluster_master_id AS cluster_id, cm.region
+                 FROM user u
+                 LEFT JOIN cluster_master cm ON cm.cluster_id = u.cluster_master_id
+                 WHERE u.type_id = 3 AND u.active = 1
+                 ORDER BY u.name ASC LIMIT 1000"
+            );
+            if ($bq) {
+                foreach ($bq->result_array() as $b) {
+                    $bds[] = array(
+                        'uid'        => (int)$b['uid'],
+                        'name'       => $b['name'],
+                        'cluster_id' => (int)$b['cluster_id'],
+                        'region'     => $b['region'],
+                    );
+                }
+            }
+        } else if (!empty($cluster_ids)) {
+            $in = implode(',', array_map('intval', $cluster_ids));
+            $bq = $this->db->query(
+                "SELECT u.uid, u.name, u.cluster_master_id AS cluster_id, cm.region
+                 FROM user u
+                 LEFT JOIN cluster_master cm ON cm.cluster_id = u.cluster_master_id
+                 WHERE u.type_id = 3 AND u.active = 1 AND u.cluster_master_id IN ($in)
+                 ORDER BY u.name ASC LIMIT 1000"
+            );
+            if ($bq) {
+                foreach ($bq->result_array() as $b) {
+                    $bds[] = array(
+                        'uid'        => (int)$b['uid'],
+                        'name'       => $b['name'],
+                        'cluster_id' => (int)$b['cluster_id'],
+                        'region'     => $b['region'],
+                    );
+                }
+            }
+        }
+
+        if (empty($regions) && empty($clusters) && empty($bds)) { $reason = 'no_rows'; }
+
+        $this->_json(array(
+            'ok'=>true,'success'=>true,'stub'=>false,
+            'scope'=>($is_org ? 'org' : 'region'),
+            'role_type_id'=>$type_id,
+            'region'=>$my_region,
+            'regions'=>$regions,
+            'clusters'=>$clusters,
+            'bds'=>$bds,
+            'counts'=>array(
+                'regions'=>count($regions),
+                'clusters'=>count($clusters),
+                'bds'=>count($bds),
+            ),
+            'reason'=>$reason,
+            'route'=>'api/report/scope_options','generated_at'=>date('c'),
         ));
     }
 

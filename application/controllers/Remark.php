@@ -44,7 +44,15 @@ class Remark extends RestApiBaseController {
 
         // Detect table name
         $table = $this->db->table_exists('tblsctaskrequest') ? 'tblsctaskrequest' : 'sc_task_request';
-        $task = $this->db->query("SELECT id, status, cid_id FROM {$table} WHERE id = ? LIMIT 1", array($taskid))->row_array();
+        // sweep_fix_20260616 (H3): the two task-request tables have different
+        // columns (tblsctaskrequest has cid_id/stid/complete_datetime/attachment;
+        // sc_task_request does not). Select only columns that exist so the lookup
+        // never errors on either schema.
+        $cols = $this->db->list_fields($table);
+        $has_cid     = in_array('cid_id', $cols, true);
+        $has_user    = in_array('user_id', $cols, true);
+        $sel = 'id, status' . ($has_cid ? ', cid_id' : '') . ($has_user ? ', user_id' : '');
+        $task = $this->db->query("SELECT {$sel} FROM {$table} WHERE id = ? LIMIT 1", array($taskid))->row_array();
 
         if (!$task) { return $this->_fail(404, 'task_not_found'); }
         if ((int)$task['status'] !== 0) { return $this->_fail(409, 'task_already_completed'); }
@@ -74,23 +82,71 @@ class Remark extends RestApiBaseController {
             if (!empty($uploaded_files)) { $attachment = json_encode($uploaded_files); }
         }
 
-        if ($delay_remarks !== '') {
-            $callevent = $this->db->query(
-                "SELECT event_id FROM tblcallevents WHERE task_id = ? LIMIT 1", array($taskid)
-            )->row_array();
-            if ($callevent && isset($callevent['event_id'])) {
-                $this->db->query(
-                    "UPDATE tblcallevents SET late_remarks_message = ? WHERE event_id = ?",
-                    array($delay_remarks, $callevent['event_id'])
-                );
+        // sweep_fix_20260616 (H3): the legacy delay-remarks block referenced
+        // tblcallevents.task_id/event_id columns that do not exist on every schema
+        // (staging tblcallevents has neither), which would error. Only run it when
+        // those columns are present; the additive cid/user mirror below covers the
+        // delay remark otherwise.
+        if ($delay_remarks !== '' && $this->db->table_exists('tblcallevents')) {
+            $ce_cols0 = $this->db->list_fields('tblcallevents');
+            if (in_array('task_id', $ce_cols0, true) && in_array('event_id', $ce_cols0, true)
+                && in_array('late_remarks_message', $ce_cols0, true)) {
+                $callevent = $this->db->query(
+                    "SELECT event_id FROM tblcallevents WHERE task_id = ? LIMIT 1", array($taskid)
+                )->row_array();
+                if ($callevent && isset($callevent['event_id'])) {
+                    $this->db->query(
+                        "UPDATE tblcallevents SET late_remarks_message = ? WHERE event_id = ?",
+                        array($delay_remarks, $callevent['event_id'])
+                    );
+                }
             }
         }
 
         $updatedatetime = date('Y-m-d H:i:s');
-        $this->db->query(
-            "UPDATE {$table} SET status = 1, complete_datetime = ?, remarks = ?, stid = ?, attachment = ? WHERE id = ?",
-            array($updatedatetime, $remarks, $stid, $attachment, $taskid)
-        );
+        // sweep_fix_20260616 (H3): build the UPDATE from columns that actually
+        // exist on this schema (sc_task_request lacks complete_datetime/stid/
+        // attachment), so the write never silently fails on a missing column.
+        $set = array('status' => 1, 'remarks' => $remarks);
+        if (in_array('complete_datetime', $cols, true)) { $set['complete_datetime'] = $updatedatetime; }
+        if (in_array('stid', $cols, true))              { $set['stid'] = $stid; }
+        if (in_array('attachment', $cols, true))        { $set['attachment'] = $attachment; }
+        if (in_array('updated_at', $cols, true))        { $set['updated_at'] = $updatedatetime; }
+        $this->db->where('id', $taskid)->update($table, $set);
+
+        // sweep_fix_20260616 (H3 root cause): Remark::list reads remarks from
+        // tblcallevents (by cid_id/user_id), but add() only wrote the task-request
+        // table - so a submitted remark was never read back. Additively mirror the
+        // remark into tblcallevents (the table the list screen reads) for the same
+        // cid/user. We UPDATE the matching event row if one exists; otherwise we
+        // INSERT a lightweight remark-carrier row so it is visible. Legacy write
+        // above is preserved.
+        $cid = $has_cid ? (int)(isset($task['cid_id']) ? $task['cid_id'] : 0) : 0;
+        $tuser = $has_user ? (int)(isset($task['user_id']) ? $task['user_id'] : 0) : 0;
+        if (($cid > 0 || $tuser > 0) && $this->db->table_exists('tblcallevents')) {
+            $ce_cols = $this->db->list_fields('tblcallevents');
+            if (in_array('remarks', $ce_cols, true)) {
+                $this->db->from('tblcallevents');
+                if ($cid > 0)   { $this->db->where('cid_id', $cid); }
+                if ($tuser > 0) { $this->db->where('user_id', $tuser); }
+                $existing = $this->db->order_by('id', 'DESC')->limit(1)->get()->row_array();
+                $ce_set = array('remarks' => $remarks);
+                if ($delay_remarks !== '' && in_array('late_remarks_message', $ce_cols, true)) {
+                    $ce_set['late_remarks_message'] = $delay_remarks;
+                }
+                if ($existing) {
+                    $this->db->where('id', (int)$existing['id'])->update('tblcallevents', $ce_set);
+                } else {
+                    $ins = array('remarks' => $remarks);
+                    if (in_array('cid_id', $ce_cols, true) && $cid > 0)   { $ins['cid_id'] = $cid; }
+                    if (in_array('user_id', $ce_cols, true) && $tuser > 0) { $ins['user_id'] = $tuser; }
+                    if ($delay_remarks !== '' && in_array('late_remarks_message', $ce_cols, true)) {
+                        $ins['late_remarks_message'] = $delay_remarks;
+                    }
+                    $this->db->insert('tblcallevents', $ins);
+                }
+            }
+        }
 
         $this->_json(array('ok' => true, 'taskid' => $taskid, 'remarks' => $remarks, 'stid' => $stid,
             'attachment' => $attachment !== 'NULL' ? json_decode($attachment) : null,

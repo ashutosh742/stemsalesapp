@@ -163,7 +163,44 @@ class Contact extends CI_Controller {
         $this->db->insert($table, $row);
         $id = $this->db->insert_id();
 
-        $this->_json(array('ok' => true, 'id' => $id, 'table' => $table));
+        // sweep_fix_20260616 (M3): the contact READER (api_get_for_lead) selects
+        // contactperson/emailid/phoneno from company_contact_master filtered by
+        // company_id, but add() writes name/email/phone(/mobile) to a different
+        // table/columns - so a newly added contact was never read back. Additively
+        // mirror the contact into company_contact_master with the EXACT columns the
+        // reader selects, keyed by the lead's company_id. The legacy write above is
+        // preserved. company_contact_master.id is not auto-increment and add_by/
+        // createddate are NOT NULL on this schema, so allocate them explicitly.
+        $mirror_id = 0;
+        $company_id = 0;
+        $lead = $this->db->select('cmpid_id')->where('id', $cid_id)->limit(1)->get('init_call')->row_array();
+        if ($lead && isset($lead['cmpid_id'])) { $company_id = (int)$lead['cmpid_id']; }
+        if ($company_id > 0 && $this->db->table_exists('company_contact_master')) {
+            $ccm_cols = $this->db->list_fields('company_contact_master');
+            $ccm = array();
+            if (in_array('contactperson', $ccm_cols, true)) { $ccm['contactperson'] = $name; }
+            if (in_array('emailid', $ccm_cols, true))       { $ccm['emailid'] = $email; }
+            if (in_array('phoneno', $ccm_cols, true))       { $ccm['phoneno'] = $phone; }
+            if (in_array('designation', $ccm_cols, true))   { $ccm['designation'] = isset($raw['designation']) ? trim($raw['designation']) : ''; }
+            if (in_array('company_id', $ccm_cols, true))    { $ccm['company_id'] = $company_id; }
+            if (in_array('is_active', $ccm_cols, true))     { $ccm['is_active'] = 1; }
+            if (in_array('type', $ccm_cols, true))          { $ccm['type'] = 'alternate'; }
+            if (in_array('createddate', $ccm_cols, true))   { $ccm['createddate'] = date('Y-m-d'); }
+            if (in_array('add_by', $ccm_cols, true)) {
+                $actor = method_exists($this, '_actor') ? $this->_actor() : null;
+                $ccm['add_by'] = ($actor && isset($actor['uid'])) ? (int)$actor['uid'] : 0;
+            }
+            // id is not auto-increment on this schema: allocate MAX(id)+1.
+            $id_extra = $this->db->query("SELECT EXTRA FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='company_contact_master' AND COLUMN_NAME='id' AND TABLE_SCHEMA = DATABASE() LIMIT 1")->row_array();
+            if ($id_extra && stripos((string)$id_extra['EXTRA'], 'auto_increment') === false) {
+                $mx = $this->db->query("SELECT MAX(id) AS mx FROM company_contact_master")->row_array();
+                $ccm['id'] = (int)($mx ? $mx['mx'] : 0) + 1;
+            }
+            $this->db->insert('company_contact_master', $ccm);
+            $mirror_id = isset($ccm['id']) ? (int)$ccm['id'] : (int)$this->db->insert_id();
+        }
+
+        $this->_json(array('ok' => true, 'id' => $id, 'table' => $table, 'mirror_id' => $mirror_id, 'company_id' => $company_id));
     }
 
     // ------------------------------------------------------------------

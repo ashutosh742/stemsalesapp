@@ -202,6 +202,33 @@ class FieldResilienceController extends CI_Controller
     }
 
     // -----------------------------------------------------------------------
+    // call_log_list() - GET api/field_resilience/call_log
+    // Added 2026-06-16 (M4). The bare call_log handler above is write-only
+    // (it inserts a call and 422s without a body), so a GET to it could never
+    // list. This read companion returns the persisted call_log rows.
+    //   GET ?bd_uid=<id>&cid_id=<optional>&limit=<optional, default 100>
+    // -----------------------------------------------------------------------
+    public function call_log_list()
+    {
+        $this->_require_bearer();
+        $bd_uid = $this->input->get('bd_uid');
+        $cid_id = $this->input->get('cid_id');
+        $limit  = $this->input->get('limit');
+        $rows = $this->fr->list_call_logs(
+            $bd_uid !== null ? trim((string) $bd_uid) : '',
+            $cid_id !== null ? (int) $cid_id : null,
+            $limit !== null ? (int) $limit : 100
+        );
+        $this->_json(array(
+            'ok'     => true,
+            'rows'   => $rows,
+            'count'  => count($rows),
+            'bd_uid' => $bd_uid !== null ? $bd_uid : null,
+            'route'  => 'api/field_resilience/call_log',
+        ));
+    }
+
+    // -----------------------------------------------------------------------
     // POST /api/field_resilience/ocr_save
     // -----------------------------------------------------------------------
 
