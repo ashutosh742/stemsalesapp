@@ -1050,8 +1050,12 @@ class PlannerV28 extends CI_Controller {
 
         $cm_uid = (int) $this->input->get('cm_uid');
         $date   = $this->resolve_date();
+        // approval_persist_20260616: by default the approval queue shows only
+        // rows still awaiting a decision. Pass ?include_resolved=1 to also see
+        // approved/rejected rows (read-only convenience, no data is hidden in DB).
+        $include_resolved = (int) $this->input->get('include_resolved') === 1;
 
-        $this->db->select('cdp.id, cdp.cm_uid, cdp.plan_date, cdp.task_kind, cdp.linked_lead_id, cdp.linked_bd_uid, cdp.start_time, cdp.end_time, cdp.status, cdp.notes, cm.compname');
+        $this->db->select('cdp.id, cdp.id AS request_id, cdp.id AS plan_id, cdp.cm_uid, cdp.plan_date, cdp.task_kind, cdp.linked_lead_id, cdp.linked_bd_uid, cdp.start_time, cdp.end_time, cdp.status, cdp.approval_status, cdp.approved_by_uid, cdp.approved_at, cdp.notes, cm.compname');
         $this->db->from('cm_daily_plan cdp');
         $this->db->join('init_call ic', 'ic.id = cdp.linked_lead_id', 'left');
         $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
@@ -1059,6 +1063,9 @@ class PlannerV28 extends CI_Controller {
             $this->db->where('cdp.cm_uid', $cm_uid);
         }
         $this->db->where('cdp.plan_date', $date);
+        if ( ! $include_resolved) {
+            $this->db->where('cdp.approval_status', 'pending');
+        }
         $this->db->order_by('cdp.start_time', 'ASC');
         $this->db->limit(100);
         $rows = $this->db->get()->result_array();
@@ -1068,7 +1075,7 @@ class PlannerV28 extends CI_Controller {
             'success' => true,
             'rows'    => $rows,
             'count'   => count($rows),
-            'data'    => ['cm_uid' => $cm_uid, 'date' => $date],
+            'data'    => ['cm_uid' => $cm_uid, 'date' => $date, 'include_resolved' => $include_resolved],
         ]);
     }
 
@@ -1293,20 +1300,69 @@ class PlannerV28 extends CI_Controller {
     {
         if ( ! $this->auth_check()) { return; }
 
-        $request_id  = (int) $this->input->post('request_id');
-        $status      = $this->input->post('status') ?: 'approved';
-        $decided_by  = (int) $this->input->post('decided_by_uid');
-        $remarks     = $this->input->post('decision_remarks') ?: '';
+        // approval_persist_20260616: the CM Approval Queue (v2_cm_queue) shows
+        // cm_daily_plan rows keyed by `id`, but the app historically only sent
+        // `request_id` (which was always undefined for queue rows) and this
+        // endpoint only ever updated bd_request. Net effect: a CM approval never
+        // persisted against the row the CM was actually viewing.
+        //
+        // Fix (additive, no regression): accept BOTH the old field names and the
+        // queue's field names, then route the write to whichever table the id
+        // actually belongs to. The legacy bd_request path is preserved verbatim.
+        //
+        // Identifier: request_id OR id OR plan_id (first one > 0 wins).
+        $request_id = (int) $this->input->post('request_id');
+        if ($request_id <= 0) { $request_id = (int) $this->input->post('id'); }
+        if ($request_id <= 0) { $request_id = (int) $this->input->post('plan_id'); }
 
-        if ($request_id <= 0) {
-            return $this->json_out(['ok' => false, 'error' => 'request_id required'], 400);
-        }
-
+        // Decision: app sends `decision` = approved|rejected; legacy sends `status`.
+        $status = $this->input->post('decision');
+        if ($status === null || $status === '') { $status = $this->input->post('status'); }
+        if ($status === null || $status === '') { $status = 'approved'; }
+        $status = strtolower((string) $status);
         $allowed = ['approved', 'rejected', 'escalated'];
         if ( ! in_array($status, $allowed, true)) {
             $status = 'approved';
         }
 
+        // Remarks: note OR decision_remarks.
+        $remarks = $this->input->post('note');
+        if ($remarks === null || $remarks === '') { $remarks = $this->input->post('decision_remarks'); }
+        if ($remarks === null) { $remarks = ''; }
+
+        // Approver: decided_by_uid OR cm_uid OR the authenticated uid.
+        $decided_by = (int) $this->input->post('decided_by_uid');
+        if ($decided_by <= 0) { $decided_by = (int) $this->input->post('cm_uid'); }
+        if ($decided_by <= 0 && $this->auth_uid > 0) { $decided_by = (int) $this->auth_uid; }
+
+        if ($request_id <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'request_id required'], 400);
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        // Route 1: the id is a cm_daily_plan row -> resolve THAT row (the row the
+        // CM Approval Queue actually shows). This is the permanent root-cause fix.
+        $plan = $this->db->where('id', $request_id)->get('cm_daily_plan')->row_array();
+        if ($plan) {
+            $this->db->where('id', $request_id)->update('cm_daily_plan', [
+                'approval_status' => $status === 'rejected' ? 'rejected' : 'approved',
+                'approved_by_uid' => $decided_by > 0 ? $decided_by : null,
+                'approved_at'     => $now,
+            ]);
+
+            return $this->json_out([
+                'ok'              => true,
+                'success'         => true,
+                'request_id'      => $request_id,
+                'id'              => $request_id,
+                'table'           => 'cm_daily_plan',
+                'status'          => $status,
+                'approval_status' => $status === 'rejected' ? 'rejected' : 'approved',
+            ]);
+        }
+
+        // Route 2 (legacy, unchanged): the id is a bd_request row.
         $row = $this->db->where('id', $request_id)->get('bd_request')->row_array();
         if ( ! $row) {
             return $this->json_out(['ok' => false, 'error' => 'request_not_found'], 404);
@@ -1315,15 +1371,17 @@ class PlannerV28 extends CI_Controller {
         $this->db->where('id', $request_id)->update('bd_request', [
             'status'           => $status,
             'decided_by_uid'   => $decided_by > 0 ? $decided_by : null,
-            'decided_at'       => date('Y-m-d H:i:s'),
+            'decided_at'       => $now,
             'decision_remarks' => $remarks,
-            'updated_at'       => date('Y-m-d H:i:s'),
+            'updated_at'       => $now,
         ]);
 
         $this->json_out([
             'ok'         => true,
             'success'    => true,
             'request_id' => $request_id,
+            'id'         => $request_id,
+            'table'      => 'bd_request',
             'status'     => $status,
         ]);
     }
