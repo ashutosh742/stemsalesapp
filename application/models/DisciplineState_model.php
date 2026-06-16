@@ -298,7 +298,14 @@ class DisciplineState_model extends CI_Model {
             if ($type_id === 4) {
                 $approver_uid = (int) $ud->admin_id;
             } elseif ($type_id === 13) {
+                // Cluster Manager approver: pst_co is the spec-primary, but some
+                // CMs have pst_co = 0. Fall back to admin_id then aadmin so the
+                // approver always resolves and the clear-request action stays
+                // usable. Additive: CMs that already resolve via pst_co are
+                // unchanged because pst_co is tried first.
                 $approver_uid = (int) $ud->pst_co;
+                if (empty($approver_uid)) { $approver_uid = (int) $ud->admin_id; }
+                if (empty($approver_uid)) { $approver_uid = (int) $ud->aadmin; }
             } elseif (in_array($type_id, [3, 5], true)) {
                 $approver_uid = (int) $ud->aadmin;
             } else {
