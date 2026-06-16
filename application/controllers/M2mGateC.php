@@ -17,7 +17,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  *
  * Nothing hardcoded. ASCII only. "percent" spelled out. Rupees "Rs".
  */
-class M2m_gate_c extends CI_Controller
+class M2mGateC extends CI_Controller
 {
     protected $token;
 
