@@ -287,6 +287,43 @@ class PlannerV28 extends CI_Controller {
 
         $rows = [];
 
+        // --- Source 0 (PRIMARY): PBNI = plan-but-not-initiated tasks ----------
+        // Mirrors DisciplineState_model::get_pbni_count and web
+        // Menu_model::get_all_old_cmp_planbutnotinited EXACTLY, so the list this
+        // screen shows always equals the gate count (no count/list mismatch).
+        // These are real tblcallevents rows from days before today that were
+        // planned (plan=1) but never initiated (nextCFID=0). id is the real
+        // tblcallevents.id so the mobile row can open task execution (tid=id).
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.appointmentdatetime, t.autotask, cm.compname');
+        $this->db->from('tblcallevents t');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.assignedto_id', $uid);
+        $this->db->where("t.actiontype_id != ''", null, false);
+        $this->db->where('t.plan', 1);
+        $this->db->where('t.nextCFID', 0);
+        $this->db->where('DATE(t.appointmentdatetime) <', 'CURDATE()', false);
+        $this->db->where("t.appointmentdatetime != '0000-00-00 00:00:00'", null, false);
+        $this->db->where("(t.delete_request = '' OR t.delete_request IS NULL)", null, false);
+        $this->db->order_by('t.appointmentdatetime', 'ASC');
+        $this->db->limit(200);
+        $pbni = $this->db->get()->result_array();
+        foreach ($pbni as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'                  => (int) $r['id'],
+                'source'              => 'pbni',
+                'task_kind'           => ((int) $r['autotask'] === 1) ? 'auto_task' : 'planned_task',
+                'title'               => $company !== '' ? $company : 'Pending task',
+                'company'             => $company,
+                'status'              => 'pending',
+                'target_id'           => (int) $r['id'],
+                'target_type'         => 'event',
+                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+                'date'                => $date,
+            ];
+        }
+
         // --- Source 1: pending carry-forward (planner_log, unresolved) ---------
         $this->db->select('pl.id, pl.init_id, pl.task_id, pl.remarks, pl.new_task_date, cm.compname');
         $this->db->from('planner_log pl');
@@ -385,7 +422,9 @@ class PlannerV28 extends CI_Controller {
             'data'    => [
                 'uid'      => $uid,
                 'date'     => $date,
+                'pbni_count' => count($pbni),
                 'sources'  => [
+                    'pbni'           => count($pbni),
                     'pending_carry'  => count($carry),
                     'auto_seeded'    => count($seeded),
                     'cm_daily_plan'  => count($plans),
