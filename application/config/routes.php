@@ -641,6 +641,19 @@ if (file_exists($__rrv)) {
 }
 
 
+/* === sweep-fix routes 2026-06-16 (additive; wires 5 app paths to their REAL
+ * controllers so they stop falling through to the StubController api/(:any)
+ * catch-all in parity_closeout. Fragment authored 2026-06-16 but its include
+ * line was never added, so bd_request, handover, report/scope_options,
+ * field_resilience/call_log and planner/assign_task were silently stubbed.
+ * Included BEFORE parity_closeout so these literal keys win under CI3
+ * first-match-wins. New literals only; no existing route or method touched. */
+$__rsf = __DIR__ . '/routes_sweep_fix_20260616.php';
+if (file_exists($__rsf)) {
+    try { include($__rsf); }
+    catch (Throwable $_ex_rsf) { log_message('error', 'routes_sweep_fix: ' . $_ex_rsf->getMessage()); }
+}
+
 /* === M2M Assurance routes 2026-06-16 (additive; included BEFORE parity_closeout
  * so the literal /api/m2m/* routes are inserted into the $route table ahead of
  * the StubController api/(:any) catch-all that parity_closeout appends, and
