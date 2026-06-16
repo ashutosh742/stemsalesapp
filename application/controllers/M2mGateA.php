@@ -19,7 +19,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
  * Nothing hardcoded - weights/threshold/dq8_count read from m2m_config.
  * ASCII only. Rupees written "Rs". "percent" spelled out. No em-dashes.
  */
-class M2m_gate_a extends CI_Controller
+class M2mGateA extends CI_Controller
 {
     protected $token;
 
@@ -165,6 +165,21 @@ class M2m_gate_a extends CI_Controller
             $quality_grade = $is_quality ? 'quality' : 'below_threshold';
         }
 
+        // The existing quality columns are enum('A','B','C','D'); STRICT mode
+        // rejects free-text labels. Map the verdict to the letter enum for the
+        // two enum columns. The rich label survives in the JSON response and in
+        // the free-text notes column so no information is lost.
+        if ($is_vague) {
+            $grade_letter = 'D';                  // 2-star, blocks advance
+        } elseif ($is_quality) {
+            $grade_letter = 'A';                  // at/above threshold
+        } elseif ($score >= ($threshold * 0.6)) {
+            $grade_letter = 'B';                  // partial/near-threshold
+        } else {
+            $grade_letter = 'C';                  // below
+        }
+        $score_int = (int)round($score);          // mom_data.mom_quality_score is tinyint
+
         $gates_total  = 4; // RP, Fit, Purpose, MoM
         $gates_passed = $rp + $fit + $purpose + ($mom_pts >= 0.5 ? 1 : 0);
 
@@ -176,23 +191,27 @@ class M2m_gate_a extends CI_Controller
             'weights' => $w,
         ]);
 
-        // Write the existing mom_quality_log (reuse - do not duplicate).
+        // Write the existing mom_quality_log (reuse - do not duplicate). The
+        // quality_grade column is enum('A','B','C','D') so it stores the letter;
+        // the descriptive verdict is preserved in the free-text notes column.
         $this->db->insert('mom_quality_log', [
             'mom_id'        => $mom_id,
             'bd_uid'        => $bd_uid,
-            'quality_grade' => $quality_grade,
-            'quality_score' => $score,
+            'quality_grade' => $grade_letter,
+            'quality_score' => $score_int,
             'gates_passed'  => $gates_passed,
             'gates_total'   => $gates_total,
             'graded_by'     => $graded_by,
             'graded_at'     => date('Y-m-d H:i:s'),
-            'notes'         => 'm2m_gate_a mom_grade=' . $mom_grade,
+            'notes'         => 'm2m_gate_a mom_grade=' . $mom_grade
+                . ' verdict=' . $quality_grade . ' score=' . $score,
         ]);
 
-        // Mirror summary onto mom_data existing quality columns.
+        // Mirror summary onto mom_data existing quality columns. Same enum and
+        // tinyint constraints apply: letter grade + int score.
         $this->db->where('id', $mom_id)->update('mom_data', [
-            'mom_quality_grade' => $quality_grade,
-            'mom_quality_score' => $score,
+            'mom_quality_grade' => $grade_letter,
+            'mom_quality_score' => $score_int,
             'gates_passed_json' => $gates_json,
         ]);
 
@@ -208,6 +227,7 @@ class M2m_gate_a extends CI_Controller
             'threshold'     => $threshold,
             'quality'       => (bool)$is_quality,
             'quality_grade' => $quality_grade,
+            'grade_letter'  => $grade_letter,
             'gates_passed'  => $gates_passed,
             'gates_total'   => $gates_total,
             'dq8'           => $dq8,
@@ -301,9 +321,12 @@ class M2m_gate_a extends CI_Controller
         $out = [];
         foreach ($rows as $r) {
             $score = (float)$r['quality_score'];
-            $is_vague = (strpos((string)$r['quality_grade'], 'vague') !== false);
-            if ($is_vague) {
-                $flag = 'RED';
+            // quality_grade is the enum letter: D = vague (2-star), C = below
+            // threshold, B = near-threshold, A = quality.
+            $letter   = strtoupper(trim((string)$r['quality_grade']));
+            $is_vague = ($letter === 'D');
+            if ($is_vague || $letter === 'C') {
+                $flag = 'RED';                 // vague and below-threshold both flag
             } elseif ($score >= $threshold) {
                 $flag = 'GREEN';
             } elseif ($score >= ($threshold * 0.7)) {
