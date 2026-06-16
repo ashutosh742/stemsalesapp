@@ -535,7 +535,28 @@ class RolePlayController extends CI_Controller
             ->get('user_sessions')
             ->row_array();
 
-        return !empty($row) ? (int) $row['uid'] : null;
+        if (!empty($row)) {
+            return (int) $row['uid'];
+        }
+
+        // rpauthfix_digest_fallback (additive 20260617):
+        // user_sessions is empty in this environment, so ALSO accept the
+        // per-user SHA1 digest sha1(SECRET|uid|YYYY-MM-DD) that every other
+        // STEM controller uses. Purely additive; master + user_sessions above
+        // are untouched (progression, no regression).
+        $secret = '4eBaiAT7r4zu6OK3b8evjLNia1D7RGgb0qRTuLJfUSo';
+        $today  = date('Y-m-d');
+        if (strlen($token) === 40 && ctype_xdigit($token)) {
+            $cands = $this->db->select('uid')->where('active', 1)->get('user')->result_array();
+            foreach ($cands as $cu) {
+                $cuid = (int) $cu['uid'];
+                if (hash_equals(sha1($secret . '|' . $cuid . '|' . $today), $token)) {
+                    return $cuid;
+                }
+            }
+        }
+
+        return null;
     }
 
 

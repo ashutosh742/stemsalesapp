@@ -1727,14 +1727,15 @@ class Mobile_write_api extends CI_Controller {
         if ((int)$task['cid_id'] !== $cid_id) return $this->_deny(400, 'task does not belong to cid_id');
 
         $row = [
-            // identity
+            // identity (momv2colfix 20260617: live mom_data has init_cmpid not init_id,
+            // has no submitted_at and no mom_text columns. Map to real columns; keep
+            // v2_submitted_at and company_name which DO exist. Free-text body -> rpmmom.)
             'user_id'      => $uid,
-            'init_id'      => $cid_id,
+            'init_cmpid'   => $cid_id,
             'tid'          => $tid,
-            'submitted_at' => $now,
             'v2_submitted_at' => $now,
-            // MoM body
-            'mom_text'     => (string)$this->_post('mom_text'),
+            // MoM body (rpmmom is the real free-text MoM column in mom_data)
+            'rpmmom'       => (string)$this->_post('mom_text'),
             'company_name' => (string)$this->_post('company_name', ''),
             // DM contact block (cstatus 6 gate)
             'dm_name'              => (string)$this->_post('dm_name', ''),
@@ -1751,10 +1752,14 @@ class Mobile_write_api extends CI_Controller {
             'proposal_intent_schools'    => (int)$this->_post('proposal_intent_schools', 0),
             'proposal_intent_budget_rs'  => (string)$this->_post('proposal_intent_budget_rs', '0'),
             'proposal_intent_location'   => (string)$this->_post('proposal_intent_location', ''),
-            'expected_close_date'        => (string)$this->_post('expected_close_date', ''),
+            // momv2datefix 20260617: expected_close_date is a nullable DATE; under
+            // STRICT_TRANS_TABLES an empty string is rejected. Coalesce blank to NULL.
+            'expected_close_date'        => (($_ecd = trim((string)$this->_post('expected_close_date', ''))) !== '' ? $_ecd : null),
             'win_probability'            => (int)$this->_post('win_probability', 0),
             // quality
-            'mom_quality_grade'    => (string)$this->_post('mom_quality_grade', ''),
+            // gradefix 20260617: mom_quality_grade is enum('A','B','C','D'); under
+            // strict mode an empty string truncates. Coalesce invalid/blank to NULL.
+            'mom_quality_grade'    => (in_array(($_mqg = strtoupper(trim((string)$this->_post('mom_quality_grade', '')))), ['A','B','C','D'], true) ? $_mqg : null),
             'mom_quality_score'    => (int)$this->_post('mom_quality_score', 0),
             // approval status (defaults to pending)
             'approved_status'      => 'Pending',
@@ -1818,15 +1823,34 @@ class Mobile_write_api extends CI_Controller {
         if ($miss) return $this->_deny(400, 'missing fields: ' . implode(',', $miss));
 
         $uid = (int)$actor['uid'];
-        $mom_id = (int)$this->_post('mom_id');
-        $dec = strtolower((string)$this->_post('decision'));
+        // sweep_fix_20260616 (H2): accept decision OR action; default approve.
+        $dec = strtolower((string)$this->_post('decision', $this->_post('action', 'approve')));
         if (!in_array($dec, ['approve','reject'], true)) return $this->_deny(400, 'decision must be approve or reject');
 
+        $mom_id = (int)$this->_post('mom_id');
+        if ($mom_id <= 0) $mom_id = (int)$this->_post('id');
+        if ($mom_id <= 0) return $this->_deny(400, 'missing fields: mom_id');
+        $reason = (string)$this->_post('reject_remarks', $this->_post('reason', ''));
+
+        list($ok2, $data, $err, $code) = $this->_mom_decide_core($uid, $mom_id, $dec, $reason);
+        if (!$ok2) return $this->_deny($code, $err);
+        return $this->_ok($data);
+    }
+
+    /**
+     * sweep_fix_20260616 (H2): shared single-MoM decision core. Writes mom_data
+     * (legacy), tblcallevents (legacy), AND mom_v2_submission (the table the CM
+     * approval queue actually reads) so an approved/rejected MoM leaves the queue.
+     * Vocabulary normalized to the submission enum ('approved'/'rejected'). The
+     * auto-task spawn is preserved verbatim. Returns [bool ok, array data, string
+     * err, int http_code].
+     */
+    private function _mom_decide_core($uid, $mom_id, $dec, $reason) {
         $mom = $this->db->query("SELECT id, tid, approved_status FROM mom_data WHERE id = ? LIMIT 1", [$mom_id])->row_array();
-        if (!$mom) return $this->_deny(400, 'unknown mom_id');
+        if (!$mom) return [false, [], 'unknown mom_id', 400];
         $cur_mom_status = isset($mom["approved_status"]) ? trim((string)$mom["approved_status"]) : "";
         // rimlyproof 20260608: NULL or empty status means not-yet-decided = approvable (treat as Pending). Only block genuinely decided MOMs.
-        if ($cur_mom_status !== "" && strcasecmp($cur_mom_status, "Pending") !== 0) return $this->_deny(409, "mom already decided");
+        if ($cur_mom_status !== "" && strcasecmp($cur_mom_status, "Pending") !== 0) return [false, [], 'mom already decided', 409];
 
         $now = date('Y-m-d H:i:s');
         $new_status = ($dec === 'approve') ? 'Approved' : 'Rejected';
@@ -1836,7 +1860,7 @@ class Mobile_write_api extends CI_Controller {
             'approved_status' => $new_status,
             'approved_by'     => (string)$uid,
             'approved_date'   => $now,
-            'reject_remarks'  => $dec === 'reject' ? (string)$this->_post('reject_remarks', '') : '',
+            'reject_remarks'  => $dec === 'reject' ? $reason : '',
         ]);
         if ((int)$mom['tid'] > 0) {
             $this->db->where('id', (int)$mom['tid'])->update('tblcallevents', [
@@ -1845,10 +1869,27 @@ class Mobile_write_api extends CI_Controller {
                 'updation_data_type' => 'mom_approve',
             ]);
         }
+        // sweep_fix_20260616 (H2): the CM MoM approval queue reads mom_v2_submission
+        // (status IN pending_cm/submitted/form_done), not mom_data. Writing only
+        // mom_data left approved MoMs stuck in the queue forever. Fix (additive):
+        // also resolve the matching mom_v2_submission row(s) - linked by event_id =
+        // mom_data.tid (the tblcallevents id) - to a status the queue excludes, using
+        // the purpose-built cm_action_at/cm_action_reason columns.
+        if ((int)$mom['tid'] > 0 && $this->db->table_exists('mom_v2_submission')) {
+            $sub_status = ($dec === 'approve') ? 'approved' : 'rejected';
+            $this->db->where('event_id', (int)$mom['tid']);
+            $this->db->where_in('status', ['draft','voice_done','form_done','submitted','pending_cm']);
+            $this->db->update('mom_v2_submission', [
+                'status'           => $sub_status,
+                'cm_action_at'     => $now,
+                'cm_action_reason' => $dec === 'reject' ? $reason : '',
+                'updated_at'       => $now,
+            ]);
+        }
         $this->db->trans_complete();
         if (!$this->db->trans_status()) {
             $err = $this->db->error();
-            return $this->_deny(500, 'mom approve failed', $err);
+            return [false, [], 'mom approve failed', 500];
         }
 
         // === CLOSEOUT_I GAP-2: MOM auto-task spawn on approve/reject ===
@@ -1857,7 +1898,6 @@ class Mobile_write_api extends CI_Controller {
         // Wrapped in try/catch - must not block the approve/reject itself.
         $autotask_id = 0;
         try {
-            // Fetch the linked tblcallevents row to get cid_id and user_id
             $parent_task = null;
             if ((int)$mom['tid'] > 0) {
                 $parent_task = $this->db->query(
@@ -1869,7 +1909,6 @@ class Mobile_write_api extends CI_Controller {
                 $spawn_action = ($dec === 'approve') ? 2 : 6;
                 $spawn_label  = ($dec === 'approve') ? 'Write Thanks Mail' : 'Write MOM';
                 $spawn_date   = date('Y-m-d H:i:s', strtotime('+1 day'));
-                // Get next available id
                 $max_id_row = $this->db->query("SELECT MAX(id) AS mx FROM tblcallevents")->row_array();
                 $spawn_id   = (int)($max_id_row ? $max_id_row['mx'] : 0) + 1;
                 $this->db->query(
@@ -1896,7 +1935,70 @@ class Mobile_write_api extends CI_Controller {
         }
         // === END CLOSEOUT_I GAP-2 ===
 
-        return $this->_ok(['mom_id' => $mom_id, 'task_id' => (int)$mom['tid'], 'mom_status' => $new_status, 'autotask_id' => $autotask_id]);
+        return [true, ['mom_id' => $mom_id, 'task_id' => (int)$mom['tid'], 'mom_status' => $new_status, 'autotask_id' => $autotask_id], '', 200];
+    }
+
+    /**
+     * POST /api/mom/reject
+     * sweep_fix_20260616 (H2): the app's /api/mom/reject previously routed to
+     * MomV2Controller::reject -> MomV2_model::reject (which does not exist),
+     * silently no-oping. Route it here so a reject persists to the same tables the
+     * queue reads. Required: uid, mom_id; optional reason/reject_remarks.
+     */
+    public function reject_mom() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'approve_mom');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $mom_id = (int)$this->_post('mom_id');
+        if ($mom_id <= 0) $mom_id = (int)$this->_post('id');
+        if ($mom_id <= 0) return $this->_deny(400, 'missing fields: mom_id');
+        $reason = (string)$this->_post('reject_remarks', $this->_post('reason', ''));
+
+        list($ok2, $data, $err, $code) = $this->_mom_decide_core((int)$actor['uid'], $mom_id, 'reject', $reason);
+        if (!$ok2) return $this->_deny($code, $err);
+        return $this->_ok($data);
+    }
+
+    /**
+     * POST /api/mom/bulk_approve
+     * sweep_fix_20260616 (H2): batch approve. Accepts mom_ids (array or CSV) and
+     * an optional decision (approve|reject). Each id runs through the shared core
+     * so mom_v2_submission (the queue table) is resolved for every one.
+     */
+    public function bulk_approve_mom() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') return $this->_deny(405, 'POST only');
+        if (!$this->_bearer_ok()) return $this->_deny(401, 'bad token');
+        $actor = $this->_resolve_actor($this->_post('uid'));
+        if (!$actor) return $this->_deny(401, 'unknown or inactive uid');
+        list($ok, $why) = $this->_can($actor, 'approve_mom');
+        if (!$ok) return $this->_deny(403, $why);
+
+        $dec = strtolower((string)$this->_post('decision', 'approve'));
+        if (!in_array($dec, ['approve','reject'], true)) $dec = 'approve';
+        $reason = (string)$this->_post('reject_remarks', $this->_post('reason', ''));
+
+        $raw = $this->_post('mom_ids', $this->_post('ids', []));
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : array_filter(array_map('trim', explode(',', $raw)), 'strlen');
+        }
+        if (!is_array($raw)) $raw = [];
+        $ids = array_values(array_unique(array_filter(array_map('intval', $raw), function ($v) { return $v > 0; })));
+        if (empty($ids)) return $this->_deny(400, 'missing fields: mom_ids');
+
+        $uid = (int)$actor['uid'];
+        $results = [];
+        $done = 0;
+        foreach ($ids as $mid) {
+            list($ok2, $data, $err, $code) = $this->_mom_decide_core($uid, $mid, $dec, $reason);
+            if ($ok2) { $done++; $results[] = $data; }
+            else { $results[] = ['mom_id' => $mid, 'ok' => false, 'error' => $err]; }
+        }
+        return $this->_ok(['decision' => $dec, 'requested' => count($ids), 'resolved' => $done, 'rows' => $results]);
     }
 
     /* ===================== POST /api/planner/approve ===================== */
