@@ -244,6 +244,157 @@ class PlannerV28 extends CI_Controller {
     }
 
     /**
+     * pbni_list
+     * GET /api/planner/pbni_list
+     *
+     * PBNI = Plan-But-Not-Initiated: the CM Day Management screen's actionable
+     * feed of pending-but-not-yet-done day items for the acting user. This is a
+     * read-only UNION of the SAME real sources the already-working endpoints use,
+     * so it stays consistent with auto_seeded / pending_carry / cm_queue:
+     *
+     *   1) pending_carry  - planner_log carry-forward rows still unresolved
+     *                       (carry_resolved_at IS NULL) for this uid/date.
+     *   2) auto_seeded    - tblcallevents rows auto-seeded (auto_plan=1) for this
+     *                       uid/date that are not yet completed (complete_time NULL).
+     *   3) cm_daily_plan  - this CM's (cm_uid) plan rows for the date in
+     *                       pending/approved approval_status and not yet done.
+     *
+     * Auth + uid resolution mirror auto_seeded() / my_tasks_today() exactly:
+     * per-user JWT (or master bearer) via auth_check(), acting uid via
+     * resolve_uid() (uid query param, field users locked to own uid).
+     *
+     * Each source is normalized to one clickable row shape the screen binds to:
+     *   id          - stable per-row id (prefixed by source so ids never collide)
+     *   source      - pending_carry | auto_seeded | cm_daily_plan
+     *   task_kind   - the item kind (carry_forward / event action / cm plan kind)
+     *   title       - human label (company name when resolvable, else a fallback)
+     *   company     - company/school name when resolvable, else empty string
+     *   status      - pending | approved | planned (actionable, not-done states)
+     *   target_id   - the id the row taps through to (event id / lead id / plan id)
+     *   target_type - what target_id points at (event | lead | cm_plan)
+     *   date        - the plan/task date for the row
+     */
+    public function pbni_list()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $uid  = $this->resolve_uid();
+        $date = $this->resolve_date();
+
+        if ($uid <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
+        }
+
+        $rows = [];
+
+        // --- Source 1: pending carry-forward (planner_log, unresolved) ---------
+        $this->db->select('pl.id, pl.init_id, pl.task_id, pl.remarks, pl.new_task_date, cm.compname');
+        $this->db->from('planner_log pl');
+        $this->db->join('init_call ic', 'ic.id = pl.init_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('pl.to_user', $uid);
+        $this->db->where('DATE(pl.new_task_date)', $date);
+        $this->db->where('pl.carry_resolved_at IS NULL', null, false);
+        $this->db->order_by('pl.re_created_at', 'DESC');
+        $this->db->limit(100);
+        $carry = $this->db->get()->result_array();
+        foreach ($carry as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'          => 'carry_' . (int) $r['id'],
+                'source'      => 'pending_carry',
+                'task_kind'   => 'carry_forward',
+                'title'       => $company !== '' ? $company : 'Carry-forward task',
+                'company'     => $company,
+                'status'      => 'pending',
+                'target_id'   => (int) $r['task_id'] > 0 ? (int) $r['task_id'] : (int) $r['init_id'],
+                'target_type' => (int) $r['task_id'] > 0 ? 'event' : 'lead',
+                'date'        => $date,
+            ];
+        }
+
+        // --- Source 2: auto-seeded events not yet completed --------------------
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.plan_time, cm.compname');
+        $this->db->from('tblcallevents t');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.user_id', $uid);
+        $this->db->where('DATE(t.date)', $date);
+        $this->db->where('t.auto_plan', 1);
+        $this->db->where('t.complete_time IS NULL', null, false);
+        $this->db->order_by('t.plan_time', 'ASC');
+        $this->db->limit(100);
+        $seeded = $this->db->get()->result_array();
+        foreach ($seeded as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'          => 'event_' . (int) $r['id'],
+                'source'      => 'auto_seeded',
+                'task_kind'   => 'event_' . (int) $r['actiontype_id'],
+                'title'       => $company !== '' ? $company : 'Planned visit',
+                'company'     => $company,
+                'status'      => 'pending',
+                'target_id'   => (int) $r['id'],
+                'target_type' => 'event',
+                'date'        => $date,
+            ];
+        }
+
+        // --- Source 3: this CM's daily plan rows (pending/approved, not done) ---
+        $this->db->select('cdp.id, cdp.task_kind, cdp.linked_lead_id, cdp.status, cdp.approval_status, cdp.notes, cm.compname');
+        $this->db->from('cm_daily_plan cdp');
+        $this->db->join('init_call ic', 'ic.id = cdp.linked_lead_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('cdp.cm_uid', $uid);
+        $this->db->where('cdp.plan_date', $date);
+        $this->db->where_in('cdp.approval_status', ['pending', 'approved']);
+        $this->db->where_not_in('cdp.status', ['done', 'skipped']);
+        $this->db->order_by('cdp.start_time', 'ASC');
+        $this->db->limit(100);
+        $plans = $this->db->get()->result_array();
+        foreach ($plans as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $notes   = isset($r['notes']) && $r['notes'] !== null ? (string) $r['notes'] : '';
+            $kind    = (string) $r['task_kind'];
+            if ($company !== '') {
+                $title = $company;
+            } elseif ($notes !== '') {
+                $title = $notes;
+            } else {
+                $title = ucwords(str_replace('_', ' ', $kind));
+            }
+            $rows[] = [
+                'id'          => 'cmplan_' . (int) $r['id'],
+                'source'      => 'cm_daily_plan',
+                'task_kind'   => $kind,
+                'title'       => $title,
+                'company'     => $company,
+                'status'      => (string) $r['approval_status'],
+                'target_id'   => (int) $r['id'],
+                'target_type' => 'cm_plan',
+                'date'        => $date,
+            ];
+        }
+
+        $this->json_out([
+            'ok'      => true,
+            'success' => true,
+            'stub'    => false,
+            'rows'    => $rows,
+            'count'   => count($rows),
+            'data'    => [
+                'uid'      => $uid,
+                'date'     => $date,
+                'sources'  => [
+                    'pending_carry'  => count($carry),
+                    'auto_seeded'    => count($seeded),
+                    'cm_daily_plan'  => count($plans),
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * clusters
      * GET /api/planner/clusters
      * Returns active clusters from cluster_master.
