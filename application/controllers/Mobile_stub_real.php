@@ -977,13 +977,18 @@ class Mobile_stub_real extends CI_Controller {
         $hard_gates = array();
         $soft_gates = array();
         try {
-            // Day-start truth: same source as /api/discipline/state (user_day keyed on user_id).
-            $today = date('Y-m-d');
+            // Day-start truth: authoritative by date, not by id. A started day
+            // is an OPEN user_day row for today (ustart set today, uclose NULL).
+            // Keyed on user_id + DATE(ustart)=CURDATE() + uclose IS NULL so a
+            // zero-id legacy row or a closed row cannot be mistaken for "started".
             $day = $this->db->query(
                 "SELECT id FROM user_day
-                 WHERE user_id = ? AND CAST(sdatet AS DATE) = ?
+                 WHERE user_id = ?
+                   AND ustart IS NOT NULL
+                   AND DATE(ustart) = CURDATE()
+                   AND uclose IS NULL
                  ORDER BY id DESC LIMIT 1",
-                array($target_uid, $today)
+                array($target_uid)
             )->row();
             if (!$day) {
                 $hard_gates[] = array(

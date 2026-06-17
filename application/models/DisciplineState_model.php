@@ -420,23 +420,28 @@ class DisciplineState_model extends CI_Model {
      * based on the most recent pbni_alert row for today.
      */
     public function get_pbni_alert_state($uid) {
-        $today = date('Y-m-d');
+        $uid = (int) $uid;
+        // Authoritative read: the gate is released when ANY pbni_alert row for
+        // this user today is Approved. Counting Approved and Pending separately
+        // (instead of reading the latest row by id) means a newer duplicate
+        // Pending row can no longer hide an Approved row and re-block the gate.
         $query = $this->db->query(
-            "SELECT approval_status
+            "SELECT
+                 SUM(CASE WHEN approval_status = 'Approved' THEN 1 ELSE 0 END) AS approved_cnt,
+                 SUM(CASE WHEN approval_status = 'Pending'  THEN 1 ELSE 0 END) AS pending_cnt
              FROM pbni_alert
              WHERE user_id = '$uid'
-               AND DATE(notified_at) = '$today'
-             ORDER BY id DESC
-             LIMIT 1"
+               AND DATE(notified_at) = CURDATE()"
         );
-        $rows = $query->result();
-        if (empty($rows)) {
-            return ['pbni_alert_pending' => false, 'pbni_alert_approved' => false];
-        }
-        $status = $rows[0]->approval_status;
+        $row = $query->row();
+        $approved_cnt = ($row && $row->approved_cnt !== null) ? (int) $row->approved_cnt : 0;
+        $pending_cnt  = ($row && $row->pending_cnt  !== null) ? (int) $row->pending_cnt  : 0;
+
+        // Approved wins: once today has an Approved row the gate stays released
+        // even if a stray Pending row also exists for today.
         return [
-            'pbni_alert_pending'  => ($status === 'Pending'),
-            'pbni_alert_approved' => ($status === 'Approved'),
+            'pbni_alert_pending'  => ($approved_cnt === 0 && $pending_cnt > 0),
+            'pbni_alert_approved' => ($approved_cnt > 0),
         ];
     }
 

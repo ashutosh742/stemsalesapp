@@ -400,16 +400,43 @@ class PlannerRequestApi extends CI_Controller {
             // the existing CAST(req_date AS DATE) filter still works.
             $req_date_with_time = $req_date . ' ' . date('H:i:s');
 
-            // INSERT request_old_pend_task.
-            $this->db->query(
-                "INSERT INTO request_old_pend_task
-                   (user_id, req_date, taskcnt, request_remarks,
-                    approvel_status, approver_name, approver_role, pbni_count)
-                 VALUES
-                   ('$uid', '$req_date_with_time', '$taskcnt', '$remarks_esc',
-                    '0', '$approver_name', '$approver_role', '$pbni_count')"
-            );
-            $new_id = $this->db->insert_id();
+            // Idempotent request_old_pend_task raise: one OPEN (approvel_status='0')
+            // request per user per req_date. A retry refreshes the open row instead
+            // of stacking duplicate pending requests. $req_date is the bare date;
+            // the stored column carries a time suffix, so match on the date part.
+            $req_date_esc = $this->db->escape_str($req_date);
+            $existing_req = $this->db->query(
+                "SELECT id FROM request_old_pend_task
+                 WHERE user_id = '$uid'
+                   AND CAST(req_date AS DATE) = '$req_date_esc'
+                   AND approvel_status = '0'
+                 ORDER BY id DESC
+                 LIMIT 1"
+            )->row();
+
+            if ($existing_req) {
+                $new_id = (int) $existing_req->id;
+                $this->db->query(
+                    "UPDATE request_old_pend_task
+                     SET req_date        = '$req_date_with_time',
+                         taskcnt         = '$taskcnt',
+                         request_remarks = '$remarks_esc',
+                         approver_name   = '$approver_name',
+                         approver_role   = '$approver_role',
+                         pbni_count      = '$pbni_count'
+                     WHERE id = '$new_id'"
+                );
+            } else {
+                $this->db->query(
+                    "INSERT INTO request_old_pend_task
+                       (user_id, req_date, taskcnt, request_remarks,
+                        approvel_status, approver_name, approver_role, pbni_count)
+                     VALUES
+                       ('$uid', '$req_date_with_time', '$taskcnt', '$remarks_esc',
+                        '0', '$approver_name', '$approver_role', '$pbni_count')"
+                );
+                $new_id = $this->db->insert_id();
+            }
 
             if (!$new_id) {
                 log_message('error', 'PlannerRequestApi::yesterday_request INSERT failed for uid=' . $uid);
@@ -417,15 +444,38 @@ class PlannerRequestApi extends CI_Controller {
                 return;
             }
 
-            // INSERT pbni_alert row. The approval_status defaults to 'Pending'.
+            // Idempotent pbni_alert raise: one OPEN (Pending) row per user per day.
+            // If an open Pending row already exists for today, refresh it instead
+            // of inserting a duplicate. Duplicate Pending rows are exactly what
+            // defeated the approval gate (a newer Pending row hid the Approved one).
             $now = date('Y-m-d H:i:s');
-            $this->db->query(
-                "INSERT INTO pbni_alert
-                   (user_id, pbni_count, lm_uid, notified_at, approval_status)
-                 VALUES
-                   ('$uid', '$pbni_count', '$approver_uid', '$now', 'Pending')"
-            );
-            $pbni_alert_id = $this->db->insert_id();
+            $existing_pending = $this->db->query(
+                "SELECT id FROM pbni_alert
+                 WHERE user_id = '$uid'
+                   AND DATE(notified_at) = CURDATE()
+                   AND approval_status = 'Pending'
+                 ORDER BY id DESC
+                 LIMIT 1"
+            )->row();
+
+            if ($existing_pending) {
+                $pbni_alert_id = (int) $existing_pending->id;
+                $this->db->query(
+                    "UPDATE pbni_alert
+                     SET pbni_count  = '$pbni_count',
+                         lm_uid      = '$approver_uid',
+                         notified_at = '$now'
+                     WHERE id = '$pbni_alert_id'"
+                );
+            } else {
+                $this->db->query(
+                    "INSERT INTO pbni_alert
+                       (user_id, pbni_count, lm_uid, notified_at, approval_status)
+                     VALUES
+                       ('$uid', '$pbni_count', '$approver_uid', '$now', 'Pending')"
+                );
+                $pbni_alert_id = $this->db->insert_id();
+            }
 
             // Notify the approver.
             $this->DisciplineState_model->insert_notify(
@@ -523,16 +573,17 @@ class PlannerRequestApi extends CI_Controller {
                      WHERE id = '$request_id'"
                 );
 
-                // Also update the matching pbni_alert row for this user (most recent Pending).
+                // Flip TODAY's pbni_alert rows for this user to Approved. Approve
+                // ALL of today's Pending rows (not just the latest by id) so any
+                // pre-existing duplicate Pending rows cannot later defeat the gate.
                 $approved_at = date('Y-m-d H:i:s');
                 $this->db->query(
                     "UPDATE pbni_alert
                      SET approval_status = 'Approved',
                          approved_at     = '$approved_at'
                      WHERE user_id = '$user_id'
-                       AND approval_status = 'Pending'
-                     ORDER BY id DESC
-                     LIMIT 1"
+                       AND DATE(notified_at) = CURDATE()
+                       AND approval_status = 'Pending'"
                 );
 
                 // Ensure a today-Approved pbni_alert row exists so Gate 2 releases.
