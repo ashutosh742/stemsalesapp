@@ -152,4 +152,144 @@ class RolePlayV28 extends CI_Controller {
         $this->json_out(['ok' => true, 'success' => true, 'session_id' => $session_id,
                          'scenario' => $scenario, 'note' => 'session started']);
     }
+
+    /**
+     * POST /api/role_play/reply
+     * Post one BD turn and get the AI persona reply.
+     * Body JSON: session_id (required), message (required), bd_uid (optional)
+     *
+     * roleplay_wireup_20260617: real turn logic. Loads the existing
+     * RolePlay_model (alias of RolePlay_agent) and calls post_turn, the
+     * same method RolePlayController/post_turn uses. Ownership uses the
+     * session's own bd_uid when the caller omits it, so it works for every
+     * role under the shared-token auth this controller already uses (the
+     * live /start uses the same auth). If the session was created by the
+     * live /start (which does not store system_prompt_text), this backfills
+     * the system prompt on the fly from the scenario so the LLM has context.
+     */
+    public function reply()
+    {
+        if (!$this->auth()) return;
+
+        $body = json_decode(file_get_contents('php://input'), true);
+        if (!$body) {
+            $body = $this->input->post();
+        }
+        $session_id = (int) ($body['session_id'] ?? 0);
+        $message    = isset($body['message']) ? trim($body['message']) : '';
+        $bd_uid     = isset($body['bd_uid']) ? (int) $body['bd_uid'] : 0;
+
+        if ($session_id <= 0) {
+            $this->json_out(['ok' => false, 'error' => 'session_id required'], 400);
+            return;
+        }
+        if ($message === '') {
+            $this->json_out(['ok' => false, 'error' => 'message required'], 400);
+            return;
+        }
+
+        $this->load->model('AIAgents/RolePlay_model', 'rp');
+
+        $session = $this->rp->get_session_row($session_id);
+        if (empty($session)) {
+            $this->json_out(['ok' => false, 'error' => 'session not found'], 404);
+            return;
+        }
+        if ($bd_uid <= 0) {
+            $bd_uid = (int) $session['bd_uid'];
+        }
+
+        // Backfill the system prompt for sessions started by the live /start,
+        // which does not populate system_prompt_text. Additive and idempotent.
+        if (empty($session['system_prompt_text'])) {
+            $scenario = $this->rp->get_scenario($session['scenario_code']);
+            if (!empty($scenario)) {
+                $context       = $this->rp->build_generic_context($scenario);
+                $system_prompt = $this->rp->build_system_prompt($scenario, $context);
+                $this->db->where('id', $session_id)
+                         ->update('role_play_session',
+                                  ['system_prompt_text' => $system_prompt]);
+            }
+        }
+
+        $result = $this->rp->post_turn($session_id, $bd_uid, $message);
+
+        if (!empty($result['error'])) {
+            $this->json_out(['ok' => false, 'error' => $result['error']]);
+            return;
+        }
+
+        $session_complete = !empty($result['session_limit_reached']);
+        $this->json_out([
+            'ok'               => true,
+            'success'          => true,
+            'session_id'       => $session_id,
+            'ai_reply'         => $result['ai_reply'] ?? '',
+            'turn_number'      => $result['turn_number'] ?? 0,
+            'session_complete' => $session_complete,
+            'cost_rs'          => $result['cost_rs'] ?? 0,
+        ]);
+    }
+
+    /**
+     * POST /api/role_play/end
+     * End a session, score it, and return the score and feedback.
+     * Body JSON: session_id (required), bd_uid (optional),
+     *            satisfaction_stars (optional 1-5)
+     *
+     * roleplay_wireup_20260617: calls RolePlay_model/end_session (the same
+     * scoring method RolePlayController/end_session uses) and flattens the
+     * score block so the app can render score and feedback directly.
+     */
+    public function end()
+    {
+        if (!$this->auth()) return;
+
+        $body = json_decode(file_get_contents('php://input'), true);
+        if (!$body) {
+            $body = $this->input->post();
+        }
+        $session_id = (int) ($body['session_id'] ?? 0);
+        $bd_uid     = isset($body['bd_uid']) ? (int) $body['bd_uid'] : 0;
+        $stars      = isset($body['satisfaction_stars'])
+                      ? (int) $body['satisfaction_stars'] : null;
+
+        if ($session_id <= 0) {
+            $this->json_out(['ok' => false, 'error' => 'session_id required'], 400);
+            return;
+        }
+
+        $this->load->model('AIAgents/RolePlay_model', 'rp');
+
+        $session = $this->rp->get_session_row($session_id);
+        if (empty($session)) {
+            $this->json_out(['ok' => false, 'error' => 'session not found'], 404);
+            return;
+        }
+        if ($bd_uid <= 0) {
+            $bd_uid = (int) $session['bd_uid'];
+        }
+
+        $result = $this->rp->end_session($session_id, $bd_uid, $stars);
+
+        if (!empty($result['error'])) {
+            $this->json_out(['ok' => false, 'error' => $result['error']]);
+            return;
+        }
+
+        $score = isset($result['score']) && is_array($result['score'])
+                 ? $result['score'] : [];
+
+        $this->json_out([
+            'ok'               => true,
+            'success'          => true,
+            'session_id'       => $session_id,
+            'status'           => $result['status'] ?? 'completed',
+            'score'            => $score['score_total'] ?? null,
+            'grade'            => $score['grade'] ?? null,
+            'feedback'         => $score['feedback_summary'] ?? '',
+            'score_detail'     => $score,
+            'induction_status' => $result['induction_status'] ?? null,
+        ]);
+    }
 }

@@ -680,3 +680,12 @@ if (file_exists($__rcdm)) {
     try { include($__rcdm); }
     catch (Throwable $_ex_rcdm) { log_message('error', 'routes_cm_daymgmt_fix: ' . $_ex_rcdm->getMessage()); }
 }
+
+/* === Role-Play turn wireup 2026-06-17 (additive literal; included AFTER parity
+ * closeout so api/role_play/reply and api/role_play/end beat the StubController
+ * catch-all and reach the real RolePlayV28 actions) === */
+$__rrpw = __DIR__ . '/routes_roleplay_wireup_20260617.php';
+if (file_exists($__rrpw)) {
+    try { include($__rrpw); }
+    catch (Throwable $_ex_rrpw) { log_message('error', 'routes_roleplay_wireup: ' . $_ex_rrpw->getMessage()); }
+}
