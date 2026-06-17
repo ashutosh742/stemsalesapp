@@ -411,6 +411,18 @@ class PlanningGradeV28 extends CI_Controller {
         if (!$this->auth_check()) return;
 
         $uid = (int) $uid;
+        // Additive 2026-06-17: the app also calls GET /api/planning_grade/bd with
+        // no uri uid. When the path arg is absent, resolve the BD uid from the
+        // query string (?uid= or ?bd_uid=) or from the authenticated user.
+        // Existing /api/planning_grade/bd/(:num) route is unaffected ($uid > 0).
+        if ($uid <= 0) {
+            $q_uid = (int) ($this->input->get('uid') ?: $this->input->get('bd_uid'));
+            if ($q_uid > 0) {
+                $uid = $q_uid;
+            } elseif (function_exists('authunify_uid') && (int) authunify_uid() > 0) {
+                $uid = (int) authunify_uid();
+            }
+        }
         if ($uid <= 0) {
             $this->json_out(['ok' => true, 'success' => true, 'rows' => [], 'count' => 0, 'note' => 'uid_required']);
             return;

@@ -687,3 +687,14 @@ if (file_exists($__rrpw)) {
     try { include($__rrpw); }
     catch (Throwable $_ex_rrpw) { log_message('error', 'routes_roleplay_wireup: ' . $_ex_rrpw->getMessage()); }
 }
+
+/* === Full-app stub closeout 2026-06-17 (additive literals + method routes;
+ * included LAST, after the role-play wireup, so the 6 audited app paths beat
+ * the StubController catch-all and reach their existing real controllers. The
+ * fragment re-floats the catch-alls to the end of the table. No /(:num) route
+ * is changed; no production impact.) === */
+$__rsco = __DIR__ . '/routes_stub_closeout_20260617.php';
+if (file_exists($__rsco)) {
+    try { include($__rsco); }
+    catch (Throwable $_ex_rsco) { log_message('error', 'routes_stub_closeout: ' . $_ex_rsco->getMessage()); }
+}

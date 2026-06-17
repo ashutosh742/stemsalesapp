@@ -87,6 +87,18 @@ class DashboardCmController extends CI_Controller {
         if (!$this->_bearer()) return;
 
         $uid = (int) $uid;
+        // Additive 2026-06-17: the app also calls GET /api/dashboard/cm with no
+        // uri uid. When the path arg is absent, resolve the CM uid from the
+        // query string (?cm_uid= or ?uid=) or from the authenticated user.
+        // Existing /api/dashboard/cm/(:num) route is unaffected ($uid arrives > 0).
+        if ($uid <= 0) {
+            $q_uid = (int) ($this->input->get('cm_uid') ?: $this->input->get('uid'));
+            if ($q_uid > 0) {
+                $uid = $q_uid;
+            } elseif (function_exists('authunify_uid') && (int) authunify_uid() > 0) {
+                $uid = (int) authunify_uid();
+            }
+        }
         if ($uid <= 0) {
             $this->_json([
                 'ok'           => false,
