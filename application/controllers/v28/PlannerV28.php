@@ -1331,6 +1331,61 @@ class PlannerV28 extends CI_Controller {
         $this->db->limit(100);
         $rows = $this->db->get()->result_array();
 
+        // cmqueue_pbni_routing_20260617: the CM mobile inbox was BLIND to BD
+        // PBNI / old-pending-task clear requests. Those land in pbni_alert
+        // (lm_uid = this CM, approval_status = 'Pending') plus a detail row in
+        // request_old_pend_task, NOT in cm_daily_plan. ADDITIVELY surface them
+        // here so the CM can approve and the BD gate releases. Each BD appears
+        // once (latest open request row). Pending items are NEVER hidden by the
+        // date filter - a pending pbni_alert is shown regardless of plan_date.
+        if ($cm_uid > 0) {
+            $cm_uid_esc = (int) $cm_uid;
+            $pbni_rows = $this->db->query(
+                "SELECT p.user_id AS bd_uid,
+                        MAX(p.id) AS pbni_id,
+                        MAX(p.pbni_count) AS pbni_count,
+                        ud.name AS bd_name,
+                        rt.id AS request_id,
+                        rt.req_date AS req_date,
+                        rt.taskcnt AS taskcnt,
+                        rt.request_remarks AS request_remarks
+                 FROM pbni_alert p
+                 JOIN user_details ud ON ud.user_id = p.user_id
+                 LEFT JOIN request_old_pend_task rt
+                        ON rt.id = (
+                            SELECT r2.id FROM request_old_pend_task r2
+                            WHERE r2.user_id = p.user_id
+                              AND r2.approvel_status = '0'
+                            ORDER BY r2.id DESC LIMIT 1
+                        )
+                 WHERE p.lm_uid = '$cm_uid_esc'
+                   AND p.approval_status = 'Pending'
+                 GROUP BY p.user_id, ud.name, rt.id, rt.req_date, rt.taskcnt, rt.request_remarks
+                 ORDER BY p.user_id ASC"
+            )->result_array();
+
+            foreach ($pbni_rows as $pr) {
+                $rows[] = [
+                    'id'              => isset($pr['request_id']) && $pr['request_id'] !== null ? (int) $pr['request_id'] : (int) $pr['pbni_id'],
+                    'request_id'      => isset($pr['request_id']) && $pr['request_id'] !== null ? (int) $pr['request_id'] : null,
+                    'plan_id'         => null,
+                    'request_kind'    => 'pbni_clear',
+                    'cm_uid'          => $cm_uid,
+                    'plan_date'       => $pr['req_date'],
+                    'bd_uid'          => (int) $pr['bd_uid'],
+                    'bd_name'         => $pr['bd_name'],
+                    'pbni_id'         => (int) $pr['pbni_id'],
+                    'pbni_count'      => (int) $pr['pbni_count'],
+                    'taskcnt'         => isset($pr['taskcnt']) ? (int) $pr['taskcnt'] : null,
+                    'req_date'        => $pr['req_date'],
+                    'request_remarks' => isset($pr['request_remarks']) ? $pr['request_remarks'] : null,
+                    'status'          => 'pending',
+                    'approval_status' => 'pending',
+                    'notes'           => 'PBNI / old pending task clear request',
+                ];
+            }
+        }
+
         $this->json_out([
             'ok'      => true,
             'success' => true,
@@ -1599,11 +1654,95 @@ class PlannerV28 extends CI_Controller {
         if ($decided_by <= 0) { $decided_by = (int) $this->input->post('cm_uid'); }
         if ($decided_by <= 0 && $this->auth_uid > 0) { $decided_by = (int) $this->auth_uid; }
 
+        $now = date('Y-m-d H:i:s');
+
+        // cmqueue_pbni_routing_20260617: PBNI clear-request decision path.
+        // When the CM approves a pbni_clear row from the queue, flip the BD gate.
+        // This mirrors PlannerRequestApi::yesterday_decision ("approve flips ALL
+        // of today's Pending rows"; "Approved wins"). Identified by request_kind
+        // = 'pbni_clear' OR by a bd_uid being supplied. Idempotent: re-approving
+        // for a BD whose rows are already Approved is a harmless no-op.
+        $request_kind = strtolower((string) $this->input->post('request_kind'));
+        $bd_uid       = (int) $this->input->post('bd_uid');
+        if ($bd_uid <= 0) { $bd_uid = (int) $this->input->post('user_id'); }
+
+        if ($request_kind === 'pbni_clear' || ($request_kind === '' && $bd_uid > 0 && $request_id <= 0)) {
+            if ($bd_uid <= 0) {
+                return $this->json_out(['ok' => false, 'error' => 'bd_uid required for pbni_clear'], 400);
+            }
+
+            if ($status === 'rejected') {
+                // Reject: flip today's open request_old_pend_task rows to '2'.
+                // pbni_alert stays Pending so the CM can re-review later.
+                $this->db->query(
+                    "UPDATE request_old_pend_task
+                     SET approvel_status = '2',
+                         approvel_by     = '$decided_by'
+                     WHERE user_id = '$bd_uid'
+                       AND approvel_status = '0'"
+                );
+                return $this->json_out([
+                    'ok'           => true,
+                    'success'      => true,
+                    'request_kind' => 'pbni_clear',
+                    'bd_uid'       => $bd_uid,
+                    'table'        => 'pbni_alert+request_old_pend_task',
+                    'status'       => 'rejected',
+                ]);
+            }
+
+            // Approve: flip ALL of today's Pending pbni_alert rows for this BD to
+            // Approved (Approved wins, robust against duplicate Pending rows).
+            $this->db->query(
+                "UPDATE pbni_alert
+                 SET approval_status = 'Approved',
+                     approved_at     = '$now'
+                 WHERE user_id = '$bd_uid'
+                   AND DATE(notified_at) = CURDATE()
+                   AND approval_status = 'Pending'"
+            );
+
+            // Ensure a today-Approved pbni_alert row exists so the gate releases
+            // even when no prior Pending row matched (same guard as the BD-side
+            // decision path).
+            $ensure = $this->db->query(
+                "SELECT COUNT(*) AS c
+                 FROM pbni_alert
+                 WHERE user_id = '$bd_uid'
+                   AND DATE(notified_at) = CURDATE()
+                   AND approval_status = 'Approved'"
+            )->row();
+            if ($ensure && (int) $ensure->c === 0) {
+                $cm_for_alert = $decided_by > 0 ? "'$decided_by'" : 'NULL';
+                $this->db->query(
+                    "INSERT INTO pbni_alert
+                     (user_id, pbni_count, lm_uid, notified_at, approval_status, approved_at)
+                     VALUES ('$bd_uid', '0', $cm_for_alert, NOW(), 'Approved', '$now')"
+                );
+            }
+
+            // Flip the matching open request_old_pend_task rows to approved ('1').
+            $this->db->query(
+                "UPDATE request_old_pend_task
+                 SET approvel_status = '1',
+                     approvel_by     = '$decided_by'
+                 WHERE user_id = '$bd_uid'
+                   AND approvel_status = '0'"
+            );
+
+            return $this->json_out([
+                'ok'           => true,
+                'success'      => true,
+                'request_kind' => 'pbni_clear',
+                'bd_uid'       => $bd_uid,
+                'table'        => 'pbni_alert+request_old_pend_task',
+                'status'       => 'approved',
+            ]);
+        }
+
         if ($request_id <= 0) {
             return $this->json_out(['ok' => false, 'error' => 'request_id required'], 400);
         }
-
-        $now = date('Y-m-d H:i:s');
 
         // Route 1: the id is a cm_daily_plan row -> resolve THAT row (the row the
         // CM Approval Queue actually shows). This is the permanent root-cause fix.
