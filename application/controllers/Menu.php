@@ -6456,7 +6456,11 @@ public  function checkPlannerDate2($date) {
         }else{
             $adate = date("Y-m-d");
         }
-         $getreqData  =  $this->db->query("SELECT `request_old_pend_task`.`id` AS tid, `request_old_pend_task`.*, `user_details`.* FROM `request_old_pend_task` LEFT JOIN `user_details` ON `request_old_pend_task`.`user_id` = `user_details`.`user_id` WHERE `user_details`.`aadmin` = '$uid' AND CAST(`request_old_pend_task`.`req_date` AS DATE) = '$adate'");
+         // cmqueue_pbni_routing_20260617: the single-date filter hid back-dated
+         // PENDING rows (req_date = yesterday) from the today view, so the CM
+         // web inbox missed open requests. Show pending rows always; keep
+         // today's decided rows visible too.
+         $getreqData  =  $this->db->query("SELECT `request_old_pend_task`.`id` AS tid, `request_old_pend_task`.*, `user_details`.* FROM `request_old_pend_task` LEFT JOIN `user_details` ON `request_old_pend_task`.`user_id` = `user_details`.`user_id` WHERE `user_details`.`aadmin` = '$uid' AND ( `request_old_pend_task`.`approvel_status` = '0' OR CAST(`request_old_pend_task`.`req_date` AS DATE) = '$adate' )");
          $getreqData =  $getreqData->result();
         
          if(!empty($user)){
