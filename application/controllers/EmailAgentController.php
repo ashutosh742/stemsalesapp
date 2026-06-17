@@ -64,12 +64,25 @@ class Email_agent extends CI_Controller
         $this->_json(['bd_uid' => $bd_uid, 'count' => count($rows), 'rows' => $rows], 200);
     }
 
-    public function draft($id)
+    public function draft($id = null)
     {
         if (!$this->bearer_auth->verify($this->token)) return $this->_json(['error' => 'unauthorized'], 401);
+        // Additive 2026-06-17: the app also calls GET/POST /api/email_agent/draft
+        // with no uri id, expecting a draft lookup by query param. When the path
+        // arg is absent, read the id from ?id=, ?draft_id= or ?cid=. Always
+        // returns HTTP 200 JSON (never a 5xx) so a missing id is graceful.
+        // The existing /api/email_agent/draft/(:num) route is unaffected.
+        if ($id === null || (int)$id <= 0) {
+            $id = (int)($this->input->get_post('id')
+                ?: $this->input->get_post('draft_id')
+                ?: $this->input->get_post('cid'));
+        }
         $id = (int)$id;
+        if ($id <= 0) {
+            return $this->_json(['ok' => false, 'error' => 'draft_id_required', 'rows' => [], 'count' => 0], 200);
+        }
         $d = $this->db->select('*')->from('email_agent_draft')->where('id', $id)->get()->row_array();
-        if (!$d) return $this->_json(['error' => 'not_found'], 404);
+        if (!$d) return $this->_json(['ok' => false, 'error' => 'not_found', 'rows' => [], 'count' => 0], 200);
         $this->_json($d, 200);
     }
 

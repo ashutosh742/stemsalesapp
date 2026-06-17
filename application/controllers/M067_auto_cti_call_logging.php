@@ -352,8 +352,10 @@ class M067_auto_cti_call_logging extends CI_Controller
     {
         if (!$this->_auth()) return;
 
-        $event_id = (int)$this->input->post('event_id');
-        $cid_id   = (int)$this->input->post('cid_id');
+        // Additive 2026-06-17: the app calls this as GET as well as POST. Read
+        // from either method so both verbs work; POST behavior is unchanged.
+        $event_id = (int)$this->input->get_post('event_id');
+        $cid_id   = (int)$this->input->get_post('cid_id');
 
         if (!$event_id || !$cid_id) {
             $this->_json(array('ok' => false, 'error' => 'missing_event_id_or_cid_id'), 400);
@@ -391,15 +393,17 @@ class M067_auto_cti_call_logging extends CI_Controller
     {
         if (!$this->_auth()) return;
 
-        $agent_uid  = (int)$this->input->post('agent_uid');
-        $lead_phone = trim((string)$this->input->post('lead_phone'));
+        // Additive 2026-06-17: the app calls this as GET as well as POST. Read
+        // from either method so both verbs work; POST behavior is unchanged.
+        $agent_uid  = (int)$this->input->get_post('agent_uid');
+        $lead_phone = trim((string)$this->input->get_post('lead_phone'));
 
         if (!$agent_uid || !$lead_phone) {
             $this->_json(array('ok' => false, 'error' => 'missing_agent_uid_or_lead_phone'), 400);
             return;
         }
 
-        $provider_id = (int)$this->input->post('provider_id');
+        $provider_id = (int)$this->input->get_post('provider_id');
         if ($provider_id) {
             $provider = $this->db->get_where('cti_provider', array('id' => $provider_id))->row_array();
         } else {

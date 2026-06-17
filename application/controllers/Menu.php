@@ -228,8 +228,12 @@ public function send_email($data){
          //$this->load->view('maintainance');
             $user = $this->session->userdata('user');
             $data['user'] = $user;
-            $uid = $user['user_id'];
-            $user_type_id = $user['type_id'];
+            // Guard against a logged-out visitor (null $user). Reading offsets on
+            // a null value raised "Trying to access array offset on value of type
+            // null" warnings here. Null-coalesce keeps the redirect-if-logged-in
+            // logic below byte-identical.
+            $uid = $user['user_id'] ?? null;
+            $user_type_id = $user['type_id'] ?? null;
             $this->load->model('Menu_model');
             if(!empty($user)){
                  $this->session->set_flashdata('error_message', '* You are already logged in. Please log out first to access login page.');

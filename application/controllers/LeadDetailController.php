@@ -77,6 +77,13 @@ class LeadDetailController extends CI_Controller {
         if (!$this->_bearer()) return;
 
         $cid_id = (int) $cid_id;
+        // Additive 2026-06-17: the app also calls GET /api/lead/detail with the
+        // lead id as a query param instead of a uri segment. When the path arg
+        // is absent, read the id from ?id= or ?cid=. The existing
+        // /api/lead/detail/(:num) route is unaffected ($cid_id arrives > 0).
+        if ($cid_id <= 0) {
+            $cid_id = (int) ($this->input->get('id') ?: $this->input->get('cid'));
+        }
         if ($cid_id <= 0) {
             $this->_json([
                 'ok'           => false,
