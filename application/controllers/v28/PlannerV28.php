@@ -1358,6 +1358,10 @@ class PlannerV28 extends CI_Controller {
         if ( ! $this->auth_check()) { return; }
 
         $cm_uid = (int) $this->input->get('cm_uid');
+        // cmqueue_pbni_round2_20260617: if the app omits ?cm_uid=, fall back to
+        // the authenticated caller so the CM still sees their own queue (and the
+        // pbni clear-requests routed to them). Managers/CMs call as themselves.
+        if ($cm_uid <= 0 && $this->auth_uid > 0) { $cm_uid = (int) $this->auth_uid; }
         $date   = $this->resolve_date();
         // approval_persist_20260616: by default the approval queue shows only
         // rows still awaiting a decision. Pass ?include_resolved=1 to also see
