@@ -434,6 +434,82 @@ class PlannerV28 extends CI_Controller {
     }
 
     /**
+     * pending_autotasks
+     * GET /api/planner/pending_autotasks
+     *
+     * Read-only. Returns the EXACT rows the discipline gate counts via
+     * DisciplineState_model::get_pending_autotask_count($uid): tblcallevents
+     * with assignedto_id = uid, actiontype_id != '', nextCFID = 0, autotask = 1,
+     * plan = 1, DATE(appointmentdatetime) < CURDATE(), appointmentdatetime not
+     * the zero datetime. These are auto-followup tasks planned on a previous day
+     * that the user must INITIATE (which sets nextCFID non-zero and clears the
+     * clear_autotask gate). Joined to init_call + company_master for lead/company
+     * context so the mobile screen can render and tap-through. The WHERE clause is
+     * a byte-for-byte mirror of the count query so list count == gate count (no
+     * mismatch). target_id is the real tblcallevents.id so the mobile row opens
+     * the existing task-execution follow-up flow (tid = id).
+     */
+    public function pending_autotasks()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $uid = $this->resolve_uid();
+
+        if ($uid <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
+        }
+
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.purpose_id, t.appointmentdatetime, t.updation_data_type, t.remarks, ic.cstatus, cm.compname');
+        $this->db->from('tblcallevents t');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.assignedto_id', $uid);
+        $this->db->where("t.actiontype_id != ''", null, false);
+        $this->db->where('t.nextCFID', 0);
+        $this->db->where('t.autotask', 1);
+        $this->db->where('t.plan', 1);
+        $this->db->where('DATE(t.appointmentdatetime) <', 'CURDATE()', false);
+        $this->db->where("t.appointmentdatetime != '0000-00-00 00:00:00'", null, false);
+        $this->db->order_by('t.appointmentdatetime', 'ASC');
+        $this->db->limit(100);
+        $result = $this->db->get()->result_array();
+
+        $rows = [];
+        foreach ($result as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'                  => (int) $r['id'],
+                'cid_id'              => isset($r['cid_id']) ? (int) $r['cid_id'] : 0,
+                'task_kind'           => 'auto_task',
+                'title'               => $company !== '' ? $company : 'Pending auto task',
+                'company'             => $company,
+                'lead'                => $company,
+                'status'              => 'pending',
+                'target_id'           => (int) $r['id'],
+                'target_type'         => 'event',
+                'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'purpose_id'          => isset($r['purpose_id']) ? (string) $r['purpose_id'] : '',
+                'updation_data_type'  => isset($r['updation_data_type']) ? (string) $r['updation_data_type'] : '',
+                'remarks'             => isset($r['remarks']) && $r['remarks'] !== null ? (string) $r['remarks'] : '',
+                'cstatus'             => isset($r['cstatus']) && $r['cstatus'] !== null ? (string) $r['cstatus'] : '',
+                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+            ];
+        }
+
+        $this->json_out([
+            'ok'      => true,
+            'success' => true,
+            'stub'    => false,
+            'rows'    => $rows,
+            'count'   => count($rows),
+            'data'    => [
+                'uid'   => $uid,
+                'count' => count($rows),
+            ],
+        ]);
+    }
+
+    /**
      * clusters
      * GET /api/planner/clusters
      * Returns active clusters from cluster_master.

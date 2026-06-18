@@ -700,3 +700,13 @@ if (file_exists($__rsco)) {
     try { include($__rsco); }
     catch (Throwable $_ex_rsco) { log_message('error', 'routes_stub_closeout: ' . $_ex_rsco->getMessage()); }
 }
+
+/* === Pending auto-task list route 2026-06-18 (additive literal; included LAST,
+ * after the stub closeout, so api/planner/pending_autotasks is the final
+ * definition for the path and beats the StubController catch-all to reach the
+ * real PlannerV28::pending_autotasks gate-row list) === */
+$__ral = __DIR__ . '/routes_autotask_list_20260618.php';
+if (file_exists($__ral)) {
+    try { include($__ral); }
+    catch (Throwable $_ex_ral) { log_message('error', 'routes_autotask_list: ' . $_ex_ral->getMessage()); }
+}
