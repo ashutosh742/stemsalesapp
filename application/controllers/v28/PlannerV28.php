@@ -1780,14 +1780,18 @@ class PlannerV28 extends CI_Controller {
             return;
         }
 
-        // Approve: flip ALL of today's Pending pbni_alert rows for this BD to
-        // Approved (Approved wins, robust against duplicate Pending rows).
+        // pbni_datescope_20260618 ROOT-CAUSE FIX: the cm_queue SQL surfaces a
+        // BD's Pending pbni_alert rows with NO date filter, but the approve
+        // flip previously cleared only today's rows (DATE(notified_at) =
+        // CURDATE()). Stale Pending rows from earlier days therefore stayed in
+        // the queue forever, so the CM approval appeared to never take effect.
+        // Approve now flips ALL Pending pbni_alert rows for this BD (Approved
+        // wins, idempotent, robust against duplicate rows across days).
         $this->db->query(
             "UPDATE pbni_alert
              SET approval_status = 'Approved',
                  approved_at     = '$now'
              WHERE user_id = '$bd_uid'
-               AND DATE(notified_at) = CURDATE()
                AND approval_status = 'Pending'"
         );
 
