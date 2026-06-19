@@ -710,3 +710,14 @@ if (file_exists($__ral)) {
     try { include($__ral); }
     catch (Throwable $_ex_ral) { log_message('error', 'routes_autotask_list: ' . $_ex_ral->getMessage()); }
 }
+
+/* === Gate-hardening list routes 2026-06-19 (additive literals; included LAST,
+ * after the autotask list include, so api/planner/research_pending,
+ * api/planner/pending_moms and api/planner/expense_pending are the final
+ * definitions for their paths and beat the StubController catch-all to reach
+ * the real gate-true PlannerV28 row lists) === */
+$__rgl = __DIR__ . '/routes_gate_lists_20260619.php';
+if (file_exists($__rgl)) {
+    try { include($__rgl); }
+    catch (Throwable $_ex_rgl) { log_message('error', 'routes_gate_lists: ' . $_ex_rgl->getMessage()); }
+}

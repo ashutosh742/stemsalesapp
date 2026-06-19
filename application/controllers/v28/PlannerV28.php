@@ -510,6 +510,277 @@ class PlannerV28 extends CI_Controller {
     }
 
     /**
+     * research_pending
+     * GET /api/planner/research_pending
+     *
+     * Gate-hardening pass 2026-06-19. Read-only. Returns the EXACT rows the
+     * update_research discipline gate counts, so the mobile screen it routes to
+     * (M047Dashboard) can render an actionable list instead of dead-ending.
+     *
+     * Mirrors DisciplineState_model::get_research_not_updated_count WHERE clause
+     * byte-for-byte (research task done but company data still "Unknown"):
+     *   tblcallevents.user_id = uid
+     *   actiontype_id = 10            (research)
+     *   nextCFID != 0                 (research task completed)
+     *   init_call.new_lead = 1
+     *   init_call.is_admin_approved = 0
+     *   company_master.compname = 'Unknown'   (lead not updated yet)
+     *   tblcallevents.self_assign = ''
+     * Joined to init_call + company_master only to surface lead/company context;
+     * the WHERE is identical to the count, so rows count == gate count.
+     */
+    public function research_pending()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $uid = $this->resolve_uid();
+
+        if ($uid <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
+        }
+
+        // True gate count first (no limit) so list count == discipline gate count
+        // even when more rows exist than the row cap below.
+        $this->db->from('tblcallevents t');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.user_id', $uid);
+        $this->db->where('t.actiontype_id', 10);
+        $this->db->where('t.nextCFID !=', 0);
+        $this->db->where('ic.new_lead', 1);
+        $this->db->where('ic.is_admin_approved', 0);
+        $this->db->where('cm.compname', 'Unknown');
+        $this->db->where("t.self_assign = ''", null, false);
+        $total = (int) $this->db->count_all_results();
+
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.appointmentdatetime, ic.id AS init_id, ic.cstatus, cm.compname');
+        $this->db->from('tblcallevents t');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.user_id', $uid);
+        $this->db->where('t.actiontype_id', 10);
+        $this->db->where('t.nextCFID !=', 0);
+        $this->db->where('ic.new_lead', 1);
+        $this->db->where('ic.is_admin_approved', 0);
+        $this->db->where('cm.compname', 'Unknown');
+        $this->db->where("t.self_assign = ''", null, false);
+        $this->db->order_by('t.appointmentdatetime', 'ASC');
+        $this->db->limit(100);
+        $result = $this->db->get()->result_array();
+
+        $rows = [];
+        foreach ($result as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'                  => (int) $r['id'],
+                'cid_id'              => isset($r['cid_id']) ? (int) $r['cid_id'] : 0,
+                'init_id'             => isset($r['init_id']) ? (int) $r['init_id'] : 0,
+                'task_kind'           => 'research_update',
+                'title'               => $company !== '' ? $company : 'Research lead to update',
+                'company'             => $company,
+                'lead'                => $company,
+                'status'              => 'pending',
+                'target_id'           => (int) $r['id'],
+                'target_type'         => 'event',
+                'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'cstatus'             => isset($r['cstatus']) && $r['cstatus'] !== null ? (string) $r['cstatus'] : '',
+                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+            ];
+        }
+
+        $this->json_out([
+            'ok'             => true,
+            'success'        => true,
+            'stub'           => false,
+            'rows'           => $rows,
+            'count'          => $total,
+            'rows_count'     => count($rows),
+            'rows_truncated' => ($total > count($rows)),
+            'data'           => ['uid' => $uid, 'count' => $total],
+        ]);
+    }
+
+    /**
+     * pending_moms
+     * GET /api/planner/pending_moms
+     *
+     * Gate-hardening pass 2026-06-19. Read-only. Returns the EXACT rows the
+     * write_mom discipline gate counts, so the mobile screen it routes to
+     * (StartMom) can render an actionable list of meetings awaiting MoM.
+     *
+     * Mirrors DisciplineState_model::get_rp_mom_count WHERE clause byte-for-byte
+     * (closed RP meeting with no MoM written):
+     *   tblcallevents.assignedto_id = uid
+     *   actiontype_id IN (3, 4, 17)
+     *   nextCFID != 0
+     *   plan = 1
+     *   approved_status = 1
+     *   barginmeeting.status IN ('Close', 'RPClose')
+     *   tblcallevents.mom IS NULL
+     * Note: this is a DIFFERENT endpoint from FunnelReportController::pending_moms
+     * (48h window, actiontype 3/4 only, mom_approved column) - that one does NOT
+     * match the gate count, which is why this gate-true mirror is added here.
+     */
+    public function pending_moms()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $uid = $this->resolve_uid();
+
+        if ($uid <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
+        }
+
+        // True gate count first (no limit) so list count == discipline gate count.
+        $this->db->from('tblcallevents t');
+        $this->db->join('barginmeeting bm', 'bm.tid = t.id', 'left');
+        $this->db->where('t.assignedto_id', $uid);
+        $this->db->where_in('t.actiontype_id', [3, 4, 17]);
+        $this->db->where('t.nextCFID !=', 0);
+        $this->db->where('t.plan', 1);
+        $this->db->where('t.approved_status', 1);
+        $this->db->where_in('bm.status', ['Close', 'RPClose']);
+        $this->db->where('t.mom IS NULL', null, false);
+        $total = (int) $this->db->count_all_results();
+
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.appointmentdatetime, bm.status AS meeting_status, cm.compname');
+        $this->db->from('tblcallevents t');
+        $this->db->join('barginmeeting bm', 'bm.tid = t.id', 'left');
+        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('t.assignedto_id', $uid);
+        $this->db->where_in('t.actiontype_id', [3, 4, 17]);
+        $this->db->where('t.nextCFID !=', 0);
+        $this->db->where('t.plan', 1);
+        $this->db->where('t.approved_status', 1);
+        $this->db->where_in('bm.status', ['Close', 'RPClose']);
+        $this->db->where('t.mom IS NULL', null, false);
+        $this->db->order_by('t.appointmentdatetime', 'ASC');
+        $this->db->limit(100);
+        $result = $this->db->get()->result_array();
+
+        $rows = [];
+        foreach ($result as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'                  => (int) $r['id'],
+                'cid_id'              => isset($r['cid_id']) ? (int) $r['cid_id'] : 0,
+                'task_kind'           => 'write_mom',
+                'title'               => $company !== '' ? $company : 'Meeting awaiting MoM',
+                'company'             => $company,
+                'lead'                => $company,
+                'status'              => 'pending',
+                'target_id'           => (int) $r['id'],
+                'target_type'         => 'event',
+                'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'meeting_status'      => isset($r['meeting_status']) && $r['meeting_status'] !== null ? (string) $r['meeting_status'] : '',
+                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+            ];
+        }
+
+        $this->json_out([
+            'ok'             => true,
+            'success'        => true,
+            'stub'           => false,
+            'rows'           => $rows,
+            'count'          => $total,
+            'rows_count'     => count($rows),
+            'rows_truncated' => ($total > count($rows)),
+            'data'           => ['uid' => $uid, 'count' => $total],
+        ]);
+    }
+
+    /**
+     * expense_pending
+     * GET /api/planner/expense_pending
+     *
+     * Gate-hardening pass 2026-06-19. Read-only. Returns the EXACT rows the
+     * fill_expense discipline gate counts, so the mobile screen it routes to
+     * (ExpenseSubmission) can render an actionable list of today meetings whose
+     * expense entry is still missing.
+     *
+     * Mirrors DisciplineState_model::get_meeting_expense_count WHERE clause
+     * byte-for-byte (today closed meeting with no cash_expense row):
+     *   barginmeeting.user_id = uid
+     *   tblcallevents.actiontype_id IN (3, 4, 17)
+     *   tblcallevents.nextCFID != 0
+     *   tblcallevents.plan = 1
+     *   DATE(tblcallevents.appointmentdatetime) = today
+     *   tblcallevents.approved_status = 1
+     *   NOT EXISTS (cash_expense WHERE meetid = barginmeeting.id)
+     */
+    public function expense_pending()
+    {
+        if ( ! $this->auth_check()) { return; }
+
+        $uid  = $this->resolve_uid();
+        $date = $this->today();
+
+        if ($uid <= 0) {
+            return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
+        }
+
+        // True gate count first (no limit) so list count == discipline gate count.
+        $this->db->from('barginmeeting bm');
+        $this->db->join('tblcallevents tcl', 'tcl.id = bm.tid', 'left');
+        $this->db->where('bm.user_id', $uid);
+        $this->db->where_in('tcl.actiontype_id', [3, 4, 17]);
+        $this->db->where('tcl.nextCFID !=', 0);
+        $this->db->where('tcl.plan', 1);
+        $this->db->where('DATE(tcl.appointmentdatetime) =', $date);
+        $this->db->where('tcl.approved_status', 1);
+        $this->db->where('NOT EXISTS (SELECT 1 FROM cash_expense WHERE cash_expense.meetid = bm.id)', null, false);
+        $total = (int) $this->db->count_all_results();
+
+        $this->db->select('bm.id AS meet_id, tcl.id AS event_id, tcl.cid_id, tcl.actiontype_id, tcl.appointmentdatetime, cm.compname');
+        $this->db->from('barginmeeting bm');
+        $this->db->join('tblcallevents tcl', 'tcl.id = bm.tid', 'left');
+        $this->db->join('init_call ic', 'ic.id = tcl.cid_id', 'left');
+        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
+        $this->db->where('bm.user_id', $uid);
+        $this->db->where_in('tcl.actiontype_id', [3, 4, 17]);
+        $this->db->where('tcl.nextCFID !=', 0);
+        $this->db->where('tcl.plan', 1);
+        $this->db->where('DATE(tcl.appointmentdatetime) =', $date);
+        $this->db->where('tcl.approved_status', 1);
+        $this->db->where('NOT EXISTS (SELECT 1 FROM cash_expense WHERE cash_expense.meetid = bm.id)', null, false);
+        $this->db->order_by('tcl.appointmentdatetime', 'ASC');
+        $this->db->limit(100);
+        $result = $this->db->get()->result_array();
+
+        $rows = [];
+        foreach ($result as $r) {
+            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
+            $rows[] = [
+                'id'                  => (int) $r['meet_id'],
+                'meet_id'             => (int) $r['meet_id'],
+                'event_id'            => isset($r['event_id']) ? (int) $r['event_id'] : 0,
+                'cid_id'              => isset($r['cid_id']) ? (int) $r['cid_id'] : 0,
+                'task_kind'           => 'fill_expense',
+                'title'               => $company !== '' ? $company : 'Meeting expense pending',
+                'company'             => $company,
+                'lead'                => $company,
+                'status'              => 'pending',
+                'target_id'           => (int) $r['meet_id'],
+                'target_type'         => 'meeting',
+                'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+            ];
+        }
+
+        $this->json_out([
+            'ok'             => true,
+            'success'        => true,
+            'stub'           => false,
+            'rows'           => $rows,
+            'count'          => $total,
+            'rows_count'     => count($rows),
+            'rows_truncated' => ($total > count($rows)),
+            'data'           => ['uid' => $uid, 'date' => $date, 'count' => $total],
+        ]);
+    }
+
+    /**
      * clusters
      * GET /api/planner/clusters
      * Returns active clusters from cluster_master.
