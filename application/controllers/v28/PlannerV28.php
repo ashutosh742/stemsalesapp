@@ -437,22 +437,31 @@ class PlannerV28 extends CI_Controller {
 
         $rows = [];
 
-        // --- Source 0 (PRIMARY): PBNI = plan-but-not-initiated tasks ----------
-        // Mirrors DisciplineState_model::get_pbni_count and web
-        // Menu_model::get_all_old_cmp_planbutnotinited EXACTLY, so the list this
-        // screen shows always equals the gate count (no count/list mismatch).
-        // These are real tblcallevents rows from days before today that were
-        // planned (plan=1) but never initiated (nextCFID=0). id is the real
-        // tblcallevents.id so the mobile row can open task execution (tid=id).
+        // --- PBNI = Plan But Not Initiated (production parity) ------------------
+        // PRODUCTION SOURCE OF TRUTH: Menu_model::get_PendingTask($uid). PBNI is
+        // TODAY's planned-but-not-initiated MANUAL tasks:
+        //   assignedto_id = uid AND actiontype_id != '' AND nextCFID = 0
+        //   AND autotask = 0 AND plan = 1
+        //   AND DATE(appointmentdatetime) = CURDATE()
+        //   AND appointmentdatetime != '0000-00-00 00:00:00'
+        //   AND (delete_request = '' OR delete_request IS NULL)
+        // (PARITY FIX 2026-06-20: the previous query had drifted to
+        // DATE < CURDATE() with NO autotask filter -- that is get_OLDPendingTask /
+        // get_all_old_cmp_planbutnotinited semantics, NOT PBNI. It pulled in
+        // overdue + auto rows that production's PBNI list never shows. Restored to
+        // get_PendingTask byte-for-byte. NO approved_status filter is added:
+        // production get_PendingTask does not have one.)
+        // id is the real tblcallevents.id so the mobile row opens task execution.
         $this->db->select('t.id, t.cid_id, t.actiontype_id, t.status_id, t.appointmentdatetime, t.autotask, cm.compname');
         $this->db->from('tblcallevents t');
         $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
         $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
         $this->db->where('t.assignedto_id', $uid);
         $this->db->where("t.actiontype_id != ''", null, false);
-        $this->db->where('t.plan', 1);
         $this->db->where('t.nextCFID', 0);
-        $this->db->where('DATE(t.appointmentdatetime) <', 'CURDATE()', false);
+        $this->db->where('t.autotask', 0);
+        $this->db->where('t.plan', 1);
+        $this->db->where('DATE(t.appointmentdatetime) =', 'CURDATE()', false);
         $this->db->where("t.appointmentdatetime != '0000-00-00 00:00:00'", null, false);
         $this->db->where("(t.delete_request = '' OR t.delete_request IS NULL)", null, false);
         $this->db->order_by('t.appointmentdatetime', 'ASC');
@@ -481,108 +490,15 @@ class PlannerV28 extends CI_Controller {
             $rows[] = $this->enrich_pending_row($row, $aid, $sid, $adt);
         }
 
-        // --- Source 1: pending carry-forward (planner_log, unresolved) ---------
-        $this->db->select('pl.id, pl.init_id, pl.task_id, pl.remarks, pl.new_task_date, cm.compname');
-        $this->db->from('planner_log pl');
-        $this->db->join('init_call ic', 'ic.id = pl.init_id', 'left');
-        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
-        $this->db->where('pl.to_user', $uid);
-        $this->db->where('DATE(pl.new_task_date)', $date);
-        $this->db->where('pl.carry_resolved_at IS NULL', null, false);
-        $this->db->order_by('pl.re_created_at', 'DESC');
-        $this->db->limit(100);
-        $carry = $this->db->get()->result_array();
-        foreach ($carry as $r) {
-            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $adt     = isset($r['new_task_date']) ? (string) $r['new_task_date'] : null;
-            $row = [
-                'id'          => 'carry_' . (int) $r['id'],
-                'source'      => 'pending_carry',
-                'task_kind'   => 'carry_forward',
-                'title'       => $company !== '' ? $company : 'Carry-forward task',
-                'company'     => $company,
-                'status'      => 'pending',
-                'target_id'   => (int) $r['task_id'] > 0 ? (int) $r['task_id'] : (int) $r['init_id'],
-                'target_type' => (int) $r['task_id'] > 0 ? 'event' : 'lead',
-                'action_id'   => 0,
-                'status_id'   => 0,
-                'date'        => $date,
-            ];
-            $rows[] = $this->enrich_pending_row($row, 0, 0, $adt);
-        }
-
-        // --- Source 2: auto-seeded events not yet completed --------------------
-        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.plan_time, cm.compname');
-        $this->db->from('tblcallevents t');
-        $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
-        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
-        $this->db->where('t.user_id', $uid);
-        $this->db->where('DATE(t.date)', $date);
-        $this->db->where('t.auto_plan', 1);
-        $this->db->where('t.complete_time IS NULL', null, false);
-        $this->db->order_by('t.plan_time', 'ASC');
-        $this->db->limit(100);
-        $seeded = $this->db->get()->result_array();
-        foreach ($seeded as $r) {
-            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $aid     = isset($r['actiontype_id']) ? (int) $r['actiontype_id'] : 0;
-            $adt     = isset($r['plan_time']) ? (string) $r['plan_time'] : null;
-            $row = [
-                'id'            => 'event_' . (int) $r['id'],
-                'source'        => 'auto_seeded',
-                'task_kind'     => 'event_' . (int) $r['actiontype_id'],
-                'title'         => $company !== '' ? $company : 'Planned visit',
-                'company'       => $company,
-                'status'        => 'pending',
-                'target_id'     => (int) $r['id'],
-                'target_type'   => 'event',
-                'actiontype_id' => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
-                'action_id'     => $aid,
-                'status_id'     => 0,
-                'date'          => $date,
-            ];
-            $rows[] = $this->enrich_pending_row($row, $aid, 0, $adt);
-        }
-
-        // --- Source 3: this CM's daily plan rows (pending/approved, not done) ---
-        $this->db->select('cdp.id, cdp.task_kind, cdp.linked_lead_id, cdp.status, cdp.approval_status, cdp.notes, cm.compname');
-        $this->db->from('cm_daily_plan cdp');
-        $this->db->join('init_call ic', 'ic.id = cdp.linked_lead_id', 'left');
-        $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
-        $this->db->where('cdp.cm_uid', $uid);
-        $this->db->where('cdp.plan_date', $date);
-        $this->db->where_in('cdp.approval_status', ['pending', 'approved']);
-        $this->db->where_not_in('cdp.status', ['done', 'skipped']);
-        $this->db->order_by('cdp.start_time', 'ASC');
-        $this->db->limit(100);
-        $plans = $this->db->get()->result_array();
-        foreach ($plans as $r) {
-            $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $notes   = isset($r['notes']) && $r['notes'] !== null ? (string) $r['notes'] : '';
-            $kind    = (string) $r['task_kind'];
-            if ($company !== '') {
-                $title = $company;
-            } elseif ($notes !== '') {
-                $title = $notes;
-            } else {
-                $title = ucwords(str_replace('_', ' ', $kind));
-            }
-            $row = [
-                'id'          => 'cmplan_' . (int) $r['id'],
-                'source'      => 'cm_daily_plan',
-                'task_kind'   => $kind,
-                'title'       => $title,
-                'company'     => $company,
-                'status'      => (string) $r['approval_status'],
-                'target_id'   => (int) $r['id'],
-                'target_type' => 'cm_plan',
-                'action_id'   => 0,
-                'status_id'   => 0,
-                'date'        => $date,
-            ];
-            $rows[] = $this->enrich_pending_row($row, 0, 0, null);
-        }
-
+        // PARITY FIX 2026-06-20: production's PBNI list (get_PendingTask) returns
+        // ONLY the tblcallevents rows above. The previous build mixed in three
+        // non-production row sources (planner_log carry-forward, auto-seeded
+        // events, cm_daily_plan) that production never shows here. Those rows had
+        // no actiontype (action_id = 0), so they only ever fell under the "All"
+        // tab and inflated "All" beyond the sum of the action tabs, breaking the
+        // "All == action-typed rows" parity and showing rows production does not.
+        // They are no longer injected into the canonical row set. Their counts are
+        // still reported under data.sources (keys preserved) for diagnostics.
         $tabs = $this->build_pending_tabs($rows);
 
         $this->json_out([
@@ -597,11 +513,14 @@ class PlannerV28 extends CI_Controller {
                 'date'     => $date,
                 'pbni_count' => count($pbni),
                 'tabs'     => $tabs,
+                // Production parity: the canonical PBNI row set is the tblcallevents
+                // get_PendingTask rows only. The non-production sources are no longer
+                // mixed into rows; their keys are kept (0) so the contract is unchanged.
                 'sources'  => [
                     'pbni'           => count($pbni),
-                    'pending_carry'  => count($carry),
-                    'auto_seeded'    => count($seeded),
-                    'cm_daily_plan'  => count($plans),
+                    'pending_carry'  => 0,
+                    'auto_seeded'    => 0,
+                    'cm_daily_plan'  => 0,
                 ],
             ],
         ]);
