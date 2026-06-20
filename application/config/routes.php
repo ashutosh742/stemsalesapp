@@ -711,11 +711,22 @@ if (file_exists($__ral)) {
     catch (Throwable $_ex_ral) { log_message('error', 'routes_autotask_list: ' . $_ex_ral->getMessage()); }
 }
 
+/* === Discipline gate-row routes 2026-06-20 (additive literals; included before
+ * the planner gate-lists, so mom_pending/expense_pending/research_pending under
+ * /api/discipline reach the real DisciplineGateRows gate-row lists - count ==
+ * gate count) === */
+$__rgr = __DIR__ . '/routes_gate_rows_20260620.php';
+if (file_exists($__rgr)) {
+    try { include($__rgr); }
+    catch (Throwable $_ex_rgr) { log_message('error', 'routes_gate_rows: ' . $_ex_rgr->getMessage()); }
+}
+
 /* === Gate-hardening list routes 2026-06-19 (additive literals; included LAST,
- * after the autotask list include, so api/planner/research_pending,
- * api/planner/pending_moms and api/planner/expense_pending are the final
- * definitions for their paths and beat the StubController catch-all to reach
- * the real gate-true PlannerV28 row lists) === */
+ * after the autotask list and the discipline gate-rows, so
+ * api/planner/research_pending, api/planner/pending_moms and
+ * api/planner/expense_pending are the FINAL definitions for their paths and
+ * beat the StubController catch-all to reach the real gate-true PlannerV28 row
+ * lists. These are the paths the mobile app calls in src/lib/api.js) === */
 $__rgl = __DIR__ . '/routes_gate_lists_20260619.php';
 if (file_exists($__rgl)) {
     try { include($__rgl); }
