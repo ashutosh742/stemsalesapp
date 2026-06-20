@@ -111,6 +111,156 @@ class PlannerV28 extends CI_Controller {
     }
 
     // -------------------------------------------------------------------------
+    // PENDING-TASK PARITY HELPERS (additive, pending_task_parity_20260620)
+    //
+    // Mirror production's BDPST/Cluster-Manager "Today's Task Planned" screen so
+    // the mobile pending-task list can render exactly like the web:
+    //   - per-row action label  (action.name for actiontype_id)
+    //   - per-row outcome label (status.name for the row's status_id)  + hex color
+    //     (status.clr) for the colored dot. Canonical join confirmed on staging:
+    //     get_ttbytime joins status ON status.id = tblcallevents.status_id and
+    //     renders status.name with its color, action.name as the task label.
+    //   - per-row task time "h:i a" from appointmentdatetime
+    //   - a per-action-type counts block (tabs) matching the production tab set,
+    //     derived from the SAME rows the list returns so counts always agree.
+    // Names come from the action/status tables (loaded here) - nothing hardcoded.
+    // -------------------------------------------------------------------------
+
+    /**
+     * The production tab set (web Cluster-Manager / BDPST view), each tab mapping
+     * to the actiontype_id group it counts. Verified on staging:
+     *   Call=1, Email=2, WA=5, MOM=6, Proposal=7, Reviews=8(Review), Research=10,
+     *   Visit Meeting=3+4+17 (meeting group), Task Check=18(MOM Check),
+     *   Specials Task=19+20+21 (ttbyd.pmc), Virtual Meetings=22 (ttbyd.vm),
+     *   Inauguration Task=23 (ttbyd.inn), School Visit=24 (ttbyd.sv).
+     * key = stable tab key, label = production tab label, ids = actiontype_ids.
+     */
+    private function pending_tab_defs()
+    {
+        return array(
+            array('key' => 'call',         'label' => 'Call',              'ids' => array(1)),
+            array('key' => 'email',        'label' => 'Email',             'ids' => array(2)),
+            array('key' => 'research',     'label' => 'Research',          'ids' => array(10)),
+            array('key' => 'wa',           'label' => 'WA',                'ids' => array(5)),
+            array('key' => 'mom',          'label' => 'MOM',               'ids' => array(6)),
+            array('key' => 'proposal',     'label' => 'Proposal',          'ids' => array(7)),
+            array('key' => 'reviews',      'label' => 'Reviews',           'ids' => array(8)),
+            array('key' => 'visit_meeting','label' => 'Visit Meeting',     'ids' => array(3, 4, 17)),
+            array('key' => 'task_check',   'label' => 'Task Check',        'ids' => array(18)),
+            array('key' => 'specials_task','label' => 'Specials Task',     'ids' => array(19, 20, 21)),
+            array('key' => 'virtual',      'label' => 'Virtual Meetings',  'ids' => array(22)),
+            array('key' => 'inauguration', 'label' => 'Inauguration Task', 'ids' => array(23)),
+            array('key' => 'school_visit', 'label' => 'School Visit',      'ids' => array(24)),
+        );
+    }
+
+    /**
+     * action_label_map
+     * id => action.name from the action table (single load, cached per request).
+     */
+    private function action_label_map()
+    {
+        static $map = null;
+        if ($map !== null) { return $map; }
+        $map = array();
+        $rows = $this->db->select('id, name')->get('action')->result_array();
+        foreach ($rows as $r) {
+            $map[(int) $r['id']] = (string) $r['name'];
+        }
+        return $map;
+    }
+
+    /**
+     * status_label_map
+     * id => array(name, clr) from the status table (single load per request).
+     * clr is the hex color the production dot uses (status.clr).
+     */
+    private function status_label_map()
+    {
+        static $map = null;
+        if ($map !== null) { return $map; }
+        $map = array();
+        $rows = $this->db->select('id, name, clr')->get('status')->result_array();
+        foreach ($rows as $r) {
+            $map[(int) $r['id']] = array(
+                'name' => (string) $r['name'],
+                'clr'  => isset($r['clr']) && $r['clr'] !== null ? (string) $r['clr'] : '',
+            );
+        }
+        return $map;
+    }
+
+    /**
+     * fmt_task_time
+     * "h:i a" (e.g. "02:30 pm") from a datetime; '' for empty/zero datetimes.
+     */
+    private function fmt_task_time($dt)
+    {
+        if (empty($dt) || $dt === '0000-00-00 00:00:00') { return ''; }
+        $ts = strtotime((string) $dt);
+        if ($ts === false || $ts <= 0) { return ''; }
+        return date('h:i a', $ts);
+    }
+
+    /**
+     * enrich_pending_row
+     * Additive enrichment for one list row. The row keeps every existing key and
+     * gains action_label, outcome_label, outcome_color, task_time. action_id /
+     * status_id are the resolved ints used for labels (and for tab bucketing).
+     */
+    private function enrich_pending_row(array $row, $action_id, $status_id, $appointmentdatetime)
+    {
+        $actions  = $this->action_label_map();
+        $statuses = $this->status_label_map();
+        $aid = (int) $action_id;
+        $sid = (int) $status_id;
+
+        $row['action_label']  = isset($actions[$aid]) ? $actions[$aid] : '';
+        $row['outcome_label'] = isset($statuses[$sid]) ? $statuses[$sid]['name'] : '';
+        $row['outcome_color'] = isset($statuses[$sid]) ? $statuses[$sid]['clr'] : '';
+        $row['task_time']     = $this->fmt_task_time($appointmentdatetime);
+        return $row;
+    }
+
+    /**
+     * build_pending_tabs
+     * Per-action-type counts derived from the SAME rows the list returns, so the
+     * tab counts always sum to the list total (parity). $rows is the array of
+     * enriched rows; each must carry an integer 'action_id'. Returns the tab list
+     * (All first, then the production tab set) plus the All total.
+     */
+    private function build_pending_tabs(array $rows)
+    {
+        $defs = $this->pending_tab_defs();
+
+        // Bucket each row's action_id once.
+        $by_action = array();
+        foreach ($rows as $r) {
+            $aid = isset($r['action_id']) ? (int) $r['action_id'] : 0;
+            if (!isset($by_action[$aid])) { $by_action[$aid] = 0; }
+            $by_action[$aid]++;
+        }
+
+        $total = count($rows);
+        $tabs  = array(
+            array('key' => 'all', 'label' => 'All', 'ids' => array(), 'count' => $total),
+        );
+        foreach ($defs as $def) {
+            $cnt = 0;
+            foreach ($def['ids'] as $id) {
+                if (isset($by_action[(int) $id])) { $cnt += $by_action[(int) $id]; }
+            }
+            $tabs[] = array(
+                'key'   => $def['key'],
+                'label' => $def['label'],
+                'ids'   => array_values(array_map('intval', $def['ids'])),
+                'count' => $cnt,
+            );
+        }
+        return $tabs;
+    }
+
+    // -------------------------------------------------------------------------
     // ENDPOINTS - v1
     // -------------------------------------------------------------------------
 
@@ -294,7 +444,7 @@ class PlannerV28 extends CI_Controller {
         // These are real tblcallevents rows from days before today that were
         // planned (plan=1) but never initiated (nextCFID=0). id is the real
         // tblcallevents.id so the mobile row can open task execution (tid=id).
-        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.appointmentdatetime, t.autotask, cm.compname');
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.status_id, t.appointmentdatetime, t.autotask, cm.compname');
         $this->db->from('tblcallevents t');
         $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
         $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
@@ -310,7 +460,10 @@ class PlannerV28 extends CI_Controller {
         $pbni = $this->db->get()->result_array();
         foreach ($pbni as $r) {
             $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $rows[] = [
+            $aid     = isset($r['actiontype_id']) ? (int) $r['actiontype_id'] : 0;
+            $sid     = isset($r['status_id']) ? (int) $r['status_id'] : 0;
+            $adt     = isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null;
+            $row = [
                 'id'                  => (int) $r['id'],
                 'source'              => 'pbni',
                 'task_kind'           => ((int) $r['autotask'] === 1) ? 'auto_task' : 'planned_task',
@@ -319,9 +472,13 @@ class PlannerV28 extends CI_Controller {
                 'status'              => 'pending',
                 'target_id'           => (int) $r['id'],
                 'target_type'         => 'event',
-                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+                'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'action_id'           => $aid,
+                'status_id'           => $sid,
+                'appointmentdatetime' => $adt,
                 'date'                => $date,
             ];
+            $rows[] = $this->enrich_pending_row($row, $aid, $sid, $adt);
         }
 
         // --- Source 1: pending carry-forward (planner_log, unresolved) ---------
@@ -337,7 +494,8 @@ class PlannerV28 extends CI_Controller {
         $carry = $this->db->get()->result_array();
         foreach ($carry as $r) {
             $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $rows[] = [
+            $adt     = isset($r['new_task_date']) ? (string) $r['new_task_date'] : null;
+            $row = [
                 'id'          => 'carry_' . (int) $r['id'],
                 'source'      => 'pending_carry',
                 'task_kind'   => 'carry_forward',
@@ -346,8 +504,11 @@ class PlannerV28 extends CI_Controller {
                 'status'      => 'pending',
                 'target_id'   => (int) $r['task_id'] > 0 ? (int) $r['task_id'] : (int) $r['init_id'],
                 'target_type' => (int) $r['task_id'] > 0 ? 'event' : 'lead',
+                'action_id'   => 0,
+                'status_id'   => 0,
                 'date'        => $date,
             ];
+            $rows[] = $this->enrich_pending_row($row, 0, 0, $adt);
         }
 
         // --- Source 2: auto-seeded events not yet completed --------------------
@@ -364,17 +525,23 @@ class PlannerV28 extends CI_Controller {
         $seeded = $this->db->get()->result_array();
         foreach ($seeded as $r) {
             $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $rows[] = [
-                'id'          => 'event_' . (int) $r['id'],
-                'source'      => 'auto_seeded',
-                'task_kind'   => 'event_' . (int) $r['actiontype_id'],
-                'title'       => $company !== '' ? $company : 'Planned visit',
-                'company'     => $company,
-                'status'      => 'pending',
-                'target_id'   => (int) $r['id'],
-                'target_type' => 'event',
-                'date'        => $date,
+            $aid     = isset($r['actiontype_id']) ? (int) $r['actiontype_id'] : 0;
+            $adt     = isset($r['plan_time']) ? (string) $r['plan_time'] : null;
+            $row = [
+                'id'            => 'event_' . (int) $r['id'],
+                'source'        => 'auto_seeded',
+                'task_kind'     => 'event_' . (int) $r['actiontype_id'],
+                'title'         => $company !== '' ? $company : 'Planned visit',
+                'company'       => $company,
+                'status'        => 'pending',
+                'target_id'     => (int) $r['id'],
+                'target_type'   => 'event',
+                'actiontype_id' => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'action_id'     => $aid,
+                'status_id'     => 0,
+                'date'          => $date,
             ];
+            $rows[] = $this->enrich_pending_row($row, $aid, 0, $adt);
         }
 
         // --- Source 3: this CM's daily plan rows (pending/approved, not done) ---
@@ -400,7 +567,7 @@ class PlannerV28 extends CI_Controller {
             } else {
                 $title = ucwords(str_replace('_', ' ', $kind));
             }
-            $rows[] = [
+            $row = [
                 'id'          => 'cmplan_' . (int) $r['id'],
                 'source'      => 'cm_daily_plan',
                 'task_kind'   => $kind,
@@ -409,9 +576,14 @@ class PlannerV28 extends CI_Controller {
                 'status'      => (string) $r['approval_status'],
                 'target_id'   => (int) $r['id'],
                 'target_type' => 'cm_plan',
+                'action_id'   => 0,
+                'status_id'   => 0,
                 'date'        => $date,
             ];
+            $rows[] = $this->enrich_pending_row($row, 0, 0, null);
         }
+
+        $tabs = $this->build_pending_tabs($rows);
 
         $this->json_out([
             'ok'      => true,
@@ -419,10 +591,12 @@ class PlannerV28 extends CI_Controller {
             'stub'    => false,
             'rows'    => $rows,
             'count'   => count($rows),
+            'tabs'    => $tabs,
             'data'    => [
                 'uid'      => $uid,
                 'date'     => $date,
                 'pbni_count' => count($pbni),
+                'tabs'     => $tabs,
                 'sources'  => [
                     'pbni'           => count($pbni),
                     'pending_carry'  => count($carry),
@@ -459,7 +633,7 @@ class PlannerV28 extends CI_Controller {
             return $this->json_out(['ok' => false, 'error' => 'uid required'], 400);
         }
 
-        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.purpose_id, t.appointmentdatetime, t.updation_data_type, t.remarks, ic.cstatus, cm.compname');
+        $this->db->select('t.id, t.cid_id, t.actiontype_id, t.status_id, t.purpose_id, t.appointmentdatetime, t.updation_data_type, t.remarks, ic.cstatus, cm.compname');
         $this->db->from('tblcallevents t');
         $this->db->join('init_call ic', 'ic.id = t.cid_id', 'left');
         $this->db->join('company_master cm', 'cm.id = ic.cmpid_id', 'left');
@@ -477,7 +651,10 @@ class PlannerV28 extends CI_Controller {
         $rows = [];
         foreach ($result as $r) {
             $company = isset($r['compname']) && $r['compname'] !== null ? (string) $r['compname'] : '';
-            $rows[] = [
+            $aid     = isset($r['actiontype_id']) ? (int) $r['actiontype_id'] : 0;
+            $sid     = isset($r['status_id']) ? (int) $r['status_id'] : 0;
+            $adt     = isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null;
+            $row = [
                 'id'                  => (int) $r['id'],
                 'cid_id'              => isset($r['cid_id']) ? (int) $r['cid_id'] : 0,
                 'task_kind'           => 'auto_task',
@@ -488,13 +665,18 @@ class PlannerV28 extends CI_Controller {
                 'target_id'           => (int) $r['id'],
                 'target_type'         => 'event',
                 'actiontype_id'       => isset($r['actiontype_id']) ? (string) $r['actiontype_id'] : '',
+                'action_id'           => $aid,
+                'status_id'           => $sid,
                 'purpose_id'          => isset($r['purpose_id']) ? (string) $r['purpose_id'] : '',
                 'updation_data_type'  => isset($r['updation_data_type']) ? (string) $r['updation_data_type'] : '',
                 'remarks'             => isset($r['remarks']) && $r['remarks'] !== null ? (string) $r['remarks'] : '',
                 'cstatus'             => isset($r['cstatus']) && $r['cstatus'] !== null ? (string) $r['cstatus'] : '',
-                'appointmentdatetime' => isset($r['appointmentdatetime']) ? (string) $r['appointmentdatetime'] : null,
+                'appointmentdatetime' => $adt,
             ];
+            $rows[] = $this->enrich_pending_row($row, $aid, $sid, $adt);
         }
+
+        $tabs = $this->build_pending_tabs($rows);
 
         $this->json_out([
             'ok'      => true,
@@ -502,9 +684,11 @@ class PlannerV28 extends CI_Controller {
             'stub'    => false,
             'rows'    => $rows,
             'count'   => count($rows),
+            'tabs'    => $tabs,
             'data'    => [
                 'uid'   => $uid,
                 'count' => count($rows),
+                'tabs'  => $tabs,
             ],
         ]);
     }
