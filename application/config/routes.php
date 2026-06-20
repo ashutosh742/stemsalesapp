@@ -732,3 +732,14 @@ if (file_exists($__rgl)) {
     try { include($__rgl); }
     catch (Throwable $_ex_rgl) { log_message('error', 'routes_gate_lists: ' . $_ex_rgl->getMessage()); }
 }
+
+/* === Close-out routes 2026-06-20 (additive literals; included LAST, after the
+ * gate-hardening lists, so api/coach/knowledge/upload_artifact and
+ * api/proposal/sla/escalate are the FINAL definitions for their paths and beat
+ * the StubController catch-all to reach their real controllers. These are the
+ * two app-called write paths wired in FIX 2.) === */
+$__rco = __DIR__ . '/routes_closeout_20260620.php';
+if (file_exists($__rco)) {
+    try { include($__rco); }
+    catch (Throwable $_ex_rco) { log_message('error', 'routes_closeout_20260620: ' . $_ex_rco->getMessage()); }
+}

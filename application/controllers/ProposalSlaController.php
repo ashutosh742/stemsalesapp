@@ -194,6 +194,128 @@ class Proposal_sla extends CI_Controller
         }
     }
 
+    // -----------------------------------------------------------------------
+    // escalate() - POST /api/proposal/sla/escalate
+    // The proposal-review "send back / rework" action. The app posts a JSON
+    // body { id|proposal_id, reviewer_uid, remarks }. Real persistence
+    // (additive, no key removal):
+    //   1. INSERT an audit row into proposal_review_escalation (rework log),
+    //   2. stamp the proposal row (remark prefix, aprby, aprdatet) so the
+    //      reviewer action is visible on the proposal record,
+    //   3. if a matching proposal_sla_tracker row exists, record the reason.
+    // Returns ok, success, stub:false plus the real result. Guards a missing
+    // proposal id with a graceful JSON 400 (no PHP fatal). Idempotent-safe.
+    // -----------------------------------------------------------------------
+    public function escalate()
+    {
+        if (!$this->bearer_auth->verify($this->token)) {
+            return $this->_json(array('ok' => false, 'success' => false, 'stub' => false, 'error' => 'unauthorized'), 401);
+        }
+
+        // The app posts a JSON body, so read php://input as well as form post.
+        $proposal_id  = (int) $this->input->post('proposal_id');
+        $reviewer_uid = (int) $this->input->post('reviewer_uid');
+        $remarks      = trim((string) $this->input->post('remarks'));
+        if ($proposal_id <= 0) { $proposal_id = (int) $this->input->post('id'); }
+
+        if ($proposal_id <= 0 || $reviewer_uid <= 0 || $remarks === '') {
+            $raw = json_decode((string) file_get_contents('php://input'), true);
+            if (is_array($raw)) {
+                if ($proposal_id <= 0) {
+                    $proposal_id = (int) (isset($raw['proposal_id']) ? $raw['proposal_id'] : (isset($raw['id']) ? $raw['id'] : 0));
+                }
+                if ($reviewer_uid <= 0 && isset($raw['reviewer_uid'])) { $reviewer_uid = (int) $raw['reviewer_uid']; }
+                if ($remarks === '' && isset($raw['remarks'])) { $remarks = trim((string) $raw['remarks']); }
+            }
+        }
+        if ($reviewer_uid <= 0) { $reviewer_uid = (int) $this->input->get('uid'); }
+
+        if ($proposal_id <= 0) {
+            return $this->_json(array(
+                'ok' => false, 'success' => false, 'stub' => false,
+                'error' => 'proposal_id_required',
+                'rows' => array(), 'data' => null, 'count' => 0,
+                'note' => 'A proposal id is required to escalate.',
+            ), 400);
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        // 1. Audit row (additive table; created via CREATE TABLE IF NOT EXISTS).
+        $escalation_id = 0;
+        try {
+            $this->db->insert('proposal_review_escalation', array(
+                'proposal_id'  => $proposal_id,
+                'reviewer_uid' => $reviewer_uid,
+                'remarks'      => $remarks !== '' ? $remarks : null,
+                'status'       => 'escalated',
+                'created_at'   => $now,
+            ));
+            $escalation_id = (int) $this->db->insert_id();
+        } catch (Exception $e) {
+            log_message('error', '[proposal_sla_escalate] audit insert failed: ' . $e->getMessage());
+        }
+
+        // 2. Stamp the proposal record so the rework is visible on it.
+        $proposal_found = false;
+        try {
+            $prop = $this->db->select('id, remark')->from('proposal')->where('id', $proposal_id)->get()->row_array();
+            if ($prop) {
+                $proposal_found = true;
+                $prefix = 'Escalated (rework) ' . $now;
+                if ($remarks !== '') { $prefix .= ': ' . $remarks; }
+                $merged = $prefix;
+                if (!empty($prop['remark'])) { $merged = $prefix . ' | ' . $prop['remark']; }
+                $merged = substr($merged, 0, 1000);
+                $this->db->where('id', $proposal_id)->update('proposal', array(
+                    'remark'   => $merged,
+                    'aprby'    => $reviewer_uid ?: null,
+                    'aprdatet' => $now,
+                ));
+            }
+        } catch (Exception $e) {
+            log_message('error', '[proposal_sla_escalate] proposal stamp failed: ' . $e->getMessage());
+        }
+
+        // 3. Record the reason on a matching SLA tracker row when one exists.
+        $sla_updated = 0;
+        try {
+            $reason = substr('escalated: ' . ($remarks !== '' ? $remarks : 'rework requested'), 0, 300);
+            $this->db->where('cid_id', $proposal_id)->update('proposal_sla_tracker', array(
+                'extension_reason' => $reason,
+            ));
+            $sla_updated = (int) $this->db->affected_rows();
+        } catch (Exception $e) {
+            log_message('error', '[proposal_sla_escalate] sla update failed: ' . $e->getMessage());
+        }
+
+        log_message('info', '[proposal_sla_escalate] proposal_id=' . $proposal_id . ' reviewer_uid=' . $reviewer_uid . ' escalation_id=' . $escalation_id);
+
+        $row = array(
+            'escalation_id' => $escalation_id,
+            'proposal_id'   => $proposal_id,
+            'reviewer_uid'  => $reviewer_uid,
+            'remarks'       => $remarks,
+            'status'        => 'escalated',
+            'created_at'    => $now,
+        );
+
+        $this->_json(array(
+            'ok'             => true,
+            'success'        => true,
+            'stub'           => false,
+            'escalated'      => true,
+            'escalation_id'  => $escalation_id,
+            'proposal_id'    => $proposal_id,
+            'proposal_found' => $proposal_found,
+            'sla_updated'    => $sla_updated,
+            'rows'           => array($row),
+            'data'           => $row,
+            'count'          => 1,
+            'note'           => $proposal_found ? 'Proposal escalated for rework.' : 'Escalation recorded; proposal row not found.',
+        ), 200);
+    }
+
     protected function _json($data, $code)
     {
         $this->output->set_status_header($code)
